@@ -1,12 +1,12 @@
 // El motor: Pi hace el trabajo de cada rol. Un agente es un proceso: le mandamos JSON por stdin
-// y nos devuelve eventos JSON por stdout (lo que hiciste a mano en rpc-a-mano.sh).
+// y nos devuelve eventos JSON por stdout (lo que hiciste a mano en rpc-by-hand.sh).
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const provider = fileURLToPath(new URL('../../harness/devexpert-provider.mjs', import.meta.url));
-// La extensión que hace que Pi respete los permisos de .opencode/agents/<rol>.md (permisos.mjs).
+// La extensión que hace que Pi respete los permisos de .opencode/agents/<rol>.md (permissions.mjs).
 const permissions = fileURLToPath(new URL('../../harness/opencode-permissions.mjs', import.meta.url));
 const skills = { planner: 'feature-spec', implementer: 'feature-implementer', validator: 'feature-validator' };
 
@@ -93,18 +93,18 @@ export function rolePrompt(feature, role, extra = '') {
 }
 
 /** Lo único que el harness le pide al LLM: que haga el trabajo de un rol y devuelva su <harness-result>. */
-export async function lanzarRol(proyecto, rol, feature, anterior) {
-  console.log(`▶ ${rol}`);
-  const correcciones = anterior?.repairBrief ? `El validator pide estas correcciones:\n${anterior.repairBrief}` : '';
-  const { result } = await runRole({ cwd: proyecto, role: loadRole(proyecto, rol), prompt: rolePrompt(feature, rol, correcciones), onEvent: logEvent(rol) });
+export async function launchRole(project, role, feature, previous) {
+  console.log(`▶ ${role}`);
+  const repairs = previous?.repairBrief ? `El validator pide estas correcciones:\n${previous.repairBrief}` : '';
+  const { result } = await runRole({ cwd: project, role: loadRole(project, role), prompt: rolePrompt(feature, role, repairs), onEvent: logEvent(role) });
   // Las rutas, como las da Git (relativas al proyecto), para que las reglas comparen lo mismo.
-  result.files = (result.files ?? []).map((archivo) => relative(proyecto, resolve(proyecto, archivo)));
-  console.log(`  ${rol} → ${result.verdict ?? result.outcome}: ${result.summary}`);
+  result.files = (result.files ?? []).map((file) => relative(project, resolve(project, file)));
+  console.log(`  ${role} → ${result.verdict ?? result.outcome}: ${result.summary}`);
   return result;
 }
 
-/** El Pi de ensayo: mismo protocolo, sin modelo. Con `trampa`, ese rol se salta su papel a propósito. */
-export function ensayo({ trampa } = {}) {
+/** El Pi de ensayo: mismo protocolo, sin modelo. Con `cheat`, ese rol se salta su papel a propósito. */
+export function useRehearsalPi({ cheat } = {}) {
   process.env.PI_BIN = fileURLToPath(new URL('./fake-pi.mjs', import.meta.url));
-  if (trampa) process.env.FAKE_PI_TRAMPA = trampa;
+  if (cheat) process.env.FAKE_PI_CHEAT = cheat;
 }

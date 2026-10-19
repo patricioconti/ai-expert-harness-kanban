@@ -1,7 +1,7 @@
 // Tu proyecto: dónde está, en qué copia se trabaja y qué features tiene.
 // El harness no vive en tu proyecto: lo apunta. Aquí lo apunta el enlace `tienda` de esta carpeta
 //   ln -s /ruta/a/tu/tienda-m6 tienda
-// o, si lo prefieres, `--proyecto <ruta>` en cualquier comando.
+// o, si lo prefieres, `--project <ruta>` en cualquier comando.
 // Cada ejecución trabaja en una copia desechable: tu fork no se toca (el Kanban es quien trabaja sobre él).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -13,10 +13,10 @@ import { jsonLike } from '../../harness/json-text.mjs';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trimEnd();
 
-/** Separa `--proyecto <ruta>` del resto de argumentos y comprueba que ahí hay un proyecto con arnés. */
+/** Separa `--project <ruta>` del resto de argumentos y comprueba que ahí hay un proyecto con arnés. */
 export function projectFrom(argv) {
   const args = [...argv];
-  const flag = args.indexOf('--proyecto');
+  const flag = args.indexOf('--project');
   const given = flag === -1 ? join(here, 'tienda') : args.splice(flag, 2)[1];
   if (!given || !existsSync(join(given, 'feature_list.json'))) {
     throw new Error(flag === -1
@@ -40,24 +40,24 @@ export function workingCopy(project) {
   return copy;
 }
 
-export const features = (proyecto) => JSON.parse(readFileSync(join(proyecto, 'feature_list.json'), 'utf8'));
-export const estadoDe = (proyecto, id) => features(proyecto).find((feature) => feature.id === id)?.status;
+export const features = (project) => JSON.parse(readFileSync(join(project, 'feature_list.json'), 'utf8'));
+export const statusOf = (project, id) => features(project).find((feature) => feature.id === id)?.status;
 
 /** La siguiente que se puede empezar: no aceptada, no bloqueada y con todas sus dependencias aceptadas. */
-export function siguienteLista(proyecto) {
-  const lista = features(proyecto);
-  const aceptadas = new Set(lista.filter((feature) => feature.status === 'accepted').map((feature) => feature.id));
-  return lista.find((feature) => !['accepted', 'blocked'].includes(feature.status) && feature.depends_on.every((id) => aceptadas.has(id)));
+export function nextReady(project) {
+  const list = features(project);
+  const accepted = new Set(list.filter((feature) => feature.status === 'accepted').map((feature) => feature.id));
+  return list.find((feature) => !['accepted', 'blocked'].includes(feature.status) && feature.depends_on.every((id) => accepted.has(id)));
 }
 
 /** La aceptación la escribe el host, nunca un rol. */
-export function marcarAceptada(proyecto, id, resumen) {
-  const original = readFileSync(join(proyecto, 'feature_list.json'), 'utf8');
-  const lista = JSON.parse(original);
-  const feature = lista.find((item) => item.id === id);
+export function markAccepted(project, id, summary) {
+  const original = readFileSync(join(project, 'feature_list.json'), 'utf8');
+  const list = JSON.parse(original);
+  const feature = list.find((item) => item.id === id);
   feature.status = 'accepted';
-  feature.evidence.push(`Independent validator accept: ${resumen}`);
-  writeFileSync(join(proyecto, 'feature_list.json'), jsonLike(original, lista)); // con el formato del archivo: el diff es solo lo que cambia
+  feature.evidence.push(`Independent validator accept: ${summary}`);
+  writeFileSync(join(project, 'feature_list.json'), jsonLike(original, list)); // con el formato del archivo: el diff es solo lo que cambia
 }
 
 /** Lo habitual al empezar: resolver el proyecto, copiarlo y decir dónde se trabaja. */
@@ -70,8 +70,8 @@ export function start(argv = process.argv.slice(2)) {
   return { project, copy, args };
 }
 
-// Para scripts de shell: `node proyecto.mjs copia [--proyecto ruta]` imprime la ruta de una copia nueva.
-if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'copia') {
+// Para scripts de shell: `node project.mjs copy [--project ruta]` imprime la ruta de una copia nueva.
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'copy') {
   try { console.log(workingCopy(projectFrom(process.argv.slice(3)).project)); }
   catch (error) { console.error(error.message); process.exit(1); }
 }

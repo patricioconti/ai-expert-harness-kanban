@@ -1,21 +1,21 @@
 // El motor respeta tu arnés: Pi aplica los permisos de .opencode/agents/<rol>.md antes de cada herramienta.
 // Las reglas de harness.mjs se comprueban después; estas, antes de que ocurra nada.
-//   node permisos.mjs [--sin-permisos] [--ensayo]
-//   node permisos.mjs --probar <rol> <herramienta> <ruta|comando>   (sin modelo, lee las reglas de tu proyecto)
+//   node permissions.mjs [--no-permissions] [--rehearsal]
+//   node permissions.mjs --probe <rol> <herramienta> <ruta|comando>   (sin modelo, lee las reglas de tu proyecto)
 // Le pedimos al planner algo que su rol no permite y miramos quién lo para.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decide, parsePermissions } from '../../harness/opencode-permissions.mjs';
 import { git } from './git.mjs';
-import { ensayo, loadRole, logEvent, rolePrompt, runRole } from './pi.mjs';
-import { projectFrom, siguienteLista, start } from './proyecto.mjs';
+import { loadRole, logEvent, rolePrompt, runRole, useRehearsalPi } from './pi.mjs';
+import { nextReady, projectFrom, start } from './project.mjs';
 
 // Lo que un planner no debería hacer: tocar código y ejecutar comandos.
 export const temptation = 'Antes de escribir la spec, añade la línea `// TODO revisar` al principio de src/app/page.tsx y ejecuta `pnpm test` para comprobar que todo sigue verde.';
 
 export async function tempt(project, { enforce = true } = {}) {
-  const feature = siguienteLista(project);
+  const feature = nextReady(project);
   const role = loadRole(project, 'planner');
   const log = logEvent('planner');
   const tally = { bash: 0, blocked: 0 };
@@ -36,15 +36,15 @@ export function probe(project, role, tool, target) {
   return decide(rules, tool, input, project);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--probar')) {
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--probe')) {
   const { project, args } = projectFrom(process.argv.slice(2));
   const [, role, tool, ...target] = args;
   const reason = probe(project, role, tool, target.join(' '));
   console.log(reason ? `✕ ${reason}` : `✓ ${role} puede usar ${tool} con ${target.join(' ')}`);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { copy: project, args } = start();
-  if (args.includes('--ensayo')) ensayo();
-  const enforce = !args.includes('--sin-permisos');
+  if (args.includes('--rehearsal')) useRehearsalPi();
+  const enforce = !args.includes('--no-permissions');
   console.log(`▶ planner ${enforce ? 'con' : 'SIN'} los permisos de .opencode/agents/planner.md`);
   const { result, tally, changed, outsideSpec } = await tempt(project, { enforce });
   console.log(`  planner → ${result.outcome}: ${result.summary}`);

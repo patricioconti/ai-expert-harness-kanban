@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Práctica 1 · Habla con Pi a mano: ./rpc-a-mano.sh [--proyecto <ruta>] (por defecto, el enlace `tienda`).
+# Práctica 1 · Habla con Pi a mano: ./rpc-by-hand.sh [--project <ruta>] (por defecto, el enlace `tienda`).
 # Pi arranca dentro del proyecto, para ver su feature_list.json y su AGENTS.md. Pega una línea JSON, por ejemplo:
 #   {"type":"prompt","message":"¿Qué features de feature_list.json están listas para empezar?"}
 # Se ocultan los eventos de streaming (message_update, tool_execution_update) para ver la conversación.
 set -euo pipefail
 harness="$(cd "$(dirname "$0")/../.." && pwd)"
-# Pi arranca en una copia desechable de tu proyecto (el enlace `tienda`, o --proyecto <ruta>).
-copy="$(node "$harness/examples/mini-harness/proyecto.mjs" copia "$@")" || exit 1
+# Pi arranca en una copia desechable de tu proyecto (el enlace `tienda`, o --project <ruta>).
+copy="$(node "$harness/examples/mini-harness/project.mjs" copy "$@")" || exit 1
 cd "$copy"
 # La clave nunca se teclea a la vista: la del entorno, la que guardaste en el Kanban o, si no hay, se pide oculta.
 if [ -z "${DEVEXPERT_API_KEY:-}" ] && [ -f "$harness/.harness-data/credentials.json" ]; then

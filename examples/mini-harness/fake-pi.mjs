@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Pi de ensayo: habla el mismo protocolo RPC y hace un trabajo mínimo por rol, sin inferencia.
 // PI_BIN=examples/mini-harness/fake-pi.mjs  ·  FAKE_PI_DELAY=ms entre pasos (por defecto 400)
-// FAKE_PI_TRAMPA=planner|implementer|validator: ese rol hace justo lo que su papel le prohíbe (harness.mjs --trampa).
-// FAKE_PI_TRAMPA=dependencia: el implementer añade una dependencia que nadie ha pedido. Ninguna regla de serie lo para.
+// FAKE_PI_CHEAT=planner|implementer|validator: ese rol hace justo lo que su papel le prohíbe (harness.mjs --cheat).
+// FAKE_PI_CHEAT=dependency: el implementer añade una dependencia que nadie ha pedido. Ninguna regla de serie lo para.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,7 +11,7 @@ import { decide, parsePermissions } from '../../harness/opencode-permissions.mjs
 
 if (process.argv.includes('--version')) { console.log('fake-pi 0.0.0 (ensayo)'); process.exit(0); }
 const delay = Number(process.env.FAKE_PI_DELAY ?? 400);
-const trampa = process.env.FAKE_PI_TRAMPA;
+const cheat = process.env.FAKE_PI_CHEAT;
 const sleep = () => new Promise((resolve) => setTimeout(resolve, delay));
 const send = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 const write = (path, text) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); };
@@ -40,7 +40,7 @@ async function play(message) {
   await tool('read', { path: 'AGENTS.md' });
   let result;
   if (role === 'planner') {
-    // permisos.mjs le pide saltarse su rol; el planner de ensayo obedece, para que se vea quién lo para.
+    // permissions.mjs le pide saltarse su rol; el planner de ensayo obedece, para que se vea quién lo para.
     if (message.includes('TODO revisar')) {
       await tool('edit', { path: 'src/app/page.tsx' }, () => write('src/app/page.tsx', `// TODO revisar\n${existsSync('src/app/page.tsx') ? readFileSync('src/app/page.tsx', 'utf8') : ''}`));
       await tool('bash', { command: 'pnpm test' });
@@ -48,7 +48,7 @@ async function play(message) {
     const spec = `docs/specs/${id}.md`;
     await tool('write', { path: spec }, () => write(spec, `# ${id}\n\nEscenario comprobable generado en ensayo.\n`));
     const files = [spec];
-    if (trampa === 'planner') { // «ya que estaba», toca código
+    if (cheat === 'planner') { // «ya que estaba», toca código
       await tool('edit', { path: 'src/app/page.tsx' }, () => write('src/app/page.tsx', `// Ajuste rápido del planner\n${existsSync('src/app/page.tsx') ? readFileSync('src/app/page.tsx', 'utf8') : ''}`));
       files.push('src/app/page.tsx');
     }
@@ -64,7 +64,7 @@ async function play(message) {
       writeFileSync('feature_list.json', jsonLike(original, list));
     });
     await tool('edit', { path: 'PROGRESS.md' }, () => appendFileSync('PROGRESS.md', `${existsSync('PROGRESS.md') ? '\n' : ''}- ${id}: passing (ensayo)\n`));
-    if (trampa === 'dependencia') { // «ya que estaba», instala una librería
+    if (cheat === 'dependency') { // «ya que estaba», instala una librería
       await tool('edit', { path: 'package.json' }, () => {
         const original = existsSync('package.json') ? readFileSync('package.json', 'utf8') : '{}';
         const manifest = JSON.parse(original);
@@ -72,13 +72,13 @@ async function play(message) {
         writeFileSync('package.json', jsonLike(original, manifest));
       });
     }
-    if (trampa === 'implementer') { // ajusta la spec a lo que ha hecho, en vez de al revés
+    if (cheat === 'implementer') { // ajusta la spec a lo que ha hecho, en vez de al revés
       await tool('edit', { path: `docs/specs/${id}.md` }, () => appendFileSync(`docs/specs/${id}.md`, '\nAjustada por el implementer para que encaje con lo que ha hecho.\n'));
     }
     result = { outcome: 'passing', summary: `${id} implementada`, evidence: ['node --test: 1 passed (ensayo)'], files: changed() };
   } else {
     await tool('bash', { command: 'node --test' });
-    if (trampa === 'validator') { // arregla él mismo lo que debería solo revisar
+    if (cheat === 'validator') { // arregla él mismo lo que debería solo revisar
       await tool('edit', { path: `src/${id}.js` }, () => appendFileSync(`src/${id}.js`, '// Arreglo rápido del validator\n'));
     }
     result = { verdict: 'accept', summary: `${id} cumple su verificación`, evidence: ['Checks repetidos por el validator (ensayo)'], testing: `Abre src/${id}.js`, files: changed() };
