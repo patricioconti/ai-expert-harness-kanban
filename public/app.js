@@ -34,9 +34,10 @@ function setFocused(id) {
   render();
 }
 
+const roleModel = (pi, role) => pi.models?.[role.name] ?? pi.modelOverride ?? role.model;
 function renderRuntime() {
   const { runtime, pi } = state;
-  const model = pi.modelOverride ? `${pi.provider}/${pi.modelOverride}` : 'modelo del rol';
+  const model = pi.models ? `${pi.provider} · modelo por rol` : pi.modelOverride ? `${pi.provider}/${pi.modelOverride}` : 'modelo del rol';
   const review = state.review;
   const reviewLabel = review?.mode === 'github' ? `PR en GitHub → ${review.base}` : review?.mode === 'local' ? `Ramas locales → ${review.base}` : 'Revisión sin configurar';
   patch($('runtime-strip'), html`
@@ -45,7 +46,7 @@ function renderRuntime() {
     <span>${model}</span>
     <span>${reviewLabel}</span>
     <span>Hasta ${state.maxParallel} en paralelo</span>
-    <span>Pi ${pi.version ?? 'no instalado'}</span>
+    <span>${pi.name} ${pi.version ?? 'no instalado'}</span>
     <span class="warn" title="${runtime.notice}">⚠ Sin sandbox de Codex</span>
     <button class="link" id="runtime-details">Detalles</button>`);
 }
@@ -53,8 +54,8 @@ async function showRuntime() {
   const { runtime, pi } = state;
   await ask($('dialog'), { title: 'Harness del proyecto', confirm: 'Entendido', body: html`
     <p>${runtime.error ?? runtime.notice}</p>
-    <p>Motor: Pi ${pi.version ?? 'no instalado'}${pi.modelOverride ? ` · modelo fijado ${pi.provider}/${pi.modelOverride}` : ''}${pi.credentials && !pi.credentials.configured ? ' · falta la API key' : ''}</p>
-    ${runtime.roles.length ? html`<table class="roles"><thead><tr><th>Rol</th><th>Skill</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${runtime.roles.map((role) => html`<tr><td><code>${role.name}</code></td><td><code>${role.skill}</code></td><td>${pi.modelOverride ?? role.model}</td><td>${role.thinking}</td></tr>`)}</tbody></table>` : ''}
+    <p>Motor: ${pi.name} ${pi.version ?? 'no instalado'}${pi.modelOverride ? ` · modelo fijado ${pi.provider}/${pi.modelOverride}` : ''}${pi.credentials && !pi.credentials.configured ? ' · falta la API key' : ''}</p>
+    ${runtime.roles.length ? html`<table class="roles"><thead><tr><th>Rol</th><th>Skill</th><th>Modelo</th><th>Esfuerzo</th></tr></thead><tbody>${runtime.roles.map((role) => html`<tr><td><code>${role.name}</code></td><td><code>${role.skill}</code></td><td>${roleModel(pi, role)}</td><td>${role.thinking}</td></tr>`)}</tbody></table>` : ''}
     <p class="muted">Cada feature trabaja en su propio worktree y rama <code>feat/&lt;id&gt;</code>. Tras la aceptación independiente se publica para revisión humana (PR en GitHub o rama local). El harness solo integra cuando tú lo pides. Pausar deja terminar lo que está en marcha; detener interrumpe ese rol.</p>` });
 }
 
@@ -200,7 +201,7 @@ async function poll() {
       online = true;
       const pi = state.pi;
       $('connection').className = `connection ${pi.installed ? 'ok' : 'bad'}`;
-      $('connection-text').textContent = pi.installed ? `Pi · ${pi.provider ?? ''}${pi.modelOverride ? `/${pi.modelOverride}` : ''}` : 'Pi no instalado';
+      $('connection-text').textContent = pi.installed ? `${pi.name} · ${pi.provider ?? ''}${pi.modelOverride ? `/${pi.modelOverride}` : ''}` : `${pi.name} no instalado`;
       render();
     }
   } catch {

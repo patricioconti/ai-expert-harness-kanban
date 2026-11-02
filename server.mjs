@@ -8,7 +8,7 @@ import { chooseProject } from './harness/project-selector.mjs';
 import { StateStore } from './harness/state-store.mjs';
 import { FeatureQueue } from './harness/queue.mjs';
 import { acquireServerLock } from './harness/server-lock.mjs';
-import { piOptions as configuredPiOptions } from './harness/pi-config.mjs';
+import { engineFor } from './harness/engine.mjs';
 import { Credentials, verifyKey } from './harness/credentials.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -40,13 +40,17 @@ async function readJson(request) {
 export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH ?? join(root, '.harness-data/state.json'), select = chooseProject, executor, piVersion, piOptions = {}, env = process.env, verify = verifyKey, queueOptions = {} } = {}) {
   statePath = resolve(statePath); // HARNESS_STATE_PATH may be relative (pnpm dev:ensayo)
   const release = acquireServerLock(statePath);
-  const options = { ...configuredPiOptions(), ...piOptions };
+  let engine;
+  try { engine = engineFor(env); } catch (error) { release(); throw error; }
+  const options = { ...engine.options, ...piOptions };
+  executor ??= engine.executor;
   if (piVersion === undefined) {
-    const detection = spawnSync(options.piBin, ['--version'], { encoding: 'utf8', timeout: 3_000 });
+    const detection = spawnSync(engine.bin(options), ['--version'], { encoding: 'utf8', timeout: 3_000 });
     piVersion = detection.status === 0 ? detection.stdout.trim() : null;
   }
   let queue;
-  const credentials = new Credentials({ path: join(dirname(statePath), 'credentials.json'), env });
+  // Only Pi needs the DevExpert key; Claude Code uses the person's own login.
+  const credentials = engine.id === 'pi' ? new Credentials({ path: join(dirname(statePath), 'credentials.json'), env }) : null;
   const maxParallel = Math.max(1, Math.min(8, Number(env.HARNESS_PARALLEL ?? 3) || 3));
   try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials, maxParallel, ...queueOptions }); }
   catch (error) { release(); throw error; }
@@ -82,6 +86,7 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
         queue.enqueue(body.taskIds);
         return json(response, 202, queue.snapshot());
       }
+      if (request.method === 'POST' && url.pathname.startsWith('/api/credentials') && !credentials) throw new RequestError(409, `${engine.name} usa tu sesión, no una API key`);
       if (request.method === 'POST' && url.pathname === '/api/credentials') {
         if (typeof body.apiKey !== 'string') throw new RequestError(400, 'Falta la API key');
         await verify(body.apiKey);
@@ -111,7 +116,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const { server, queue } = createHarnessServer();
   queue.watchReviews();
   const port = Number(process.env.PORT ?? 4173);
-  server.listen(port, '127.0.0.1', () => console.log(`Harness en http://localhost:${port} · Pi · feature-flow · hasta ${queue.maxParallel} en paralelo`));
+  server.listen(port, '127.0.0.1', () => console.log(`Harness en http://localhost:${port} · ${queue.piOptions.engineName} · feature-flow · hasta ${queue.maxParallel} en paralelo`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     await queue.close();
     server.close();

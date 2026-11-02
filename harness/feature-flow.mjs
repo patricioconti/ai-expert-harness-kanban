@@ -114,7 +114,7 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     run.stage = roleStages[roleName];
     run.role = roleName;
     run.skill = role.skillName;
-    run.model = piOptions.model ?? pinnedPi.model;
+    run.model = piOptions.models?.[roleName] ?? piOptions.model ?? pinnedPi.model;
     run.provider = piOptions.provider ?? pinnedPi.provider;
     run.error = null;
     save();

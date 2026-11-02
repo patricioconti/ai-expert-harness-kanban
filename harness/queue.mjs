@@ -57,7 +57,7 @@ export class FeatureQueue {
     if (project) { try { runtime = cachedRuntime(project.path); } catch (failure) { runtimeError = failure.message; } }
     const runs = this.currentRuns().map(({ baseline, inventory, acceptance, roleBaseline, ...run }) => ({ ...run, files: acceptance?.files ?? run.ownedFiles ?? [] }));
     return { project, projectPath: this.data.projectPath, error, runtime: runtimeSummary(runtime, runtimeError),
-      pi: { installed: Boolean(this.piVersion), version: this.piVersion, provider: this.piOptions.provider ?? null, modelOverride: this.piOptions.model ?? null, credentials: this.credentials?.status() ?? null },
+      pi: { engine: this.piOptions.engine ?? 'pi', name: this.piOptions.engineName ?? 'Pi', installed: Boolean(this.piVersion), version: this.piVersion, provider: this.piOptions.provider ?? null, modelOverride: this.piOptions.model ?? null, models: this.piOptions.models ?? null, credentials: this.credentials?.status() ?? null },
       review: this.data.reviews[this.data.projectPath] ?? null, maxParallel: this.maxParallel,
       runs, paused: this.data.paused, activeRunIds: [...this.active.keys()] };
   }
@@ -71,7 +71,7 @@ export class FeatureQueue {
     this.save();
   }
   enqueue(ids) {
-    if (!this.piVersion) throw new Error('Pi no está instalado');
+    if (!this.piVersion) throw new Error(`${this.piOptions.engineName ?? 'Pi'} no está instalado`);
     const project = this.project();
     if (!project) throw new Error('Abre un proyecto primero');
     loadRuntime(project.path);

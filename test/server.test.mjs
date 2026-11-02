@@ -72,6 +72,23 @@ test('HTTP: la API key se comprueba, no vuelve al navegador y solo se guarda si 
   assert.deepEqual(checked, ['sk-bad', 'sk-good', 'sk-good']);
 });
 
+test('HTTP: con el motor claude cada rol usa su modelo y no se pide API key', async (t) => {
+  const cwd = fixture();
+  const { post, base, queue } = await start(t, { env: { HARNESS_ENGINE: 'claude' }, select: async () => inspectProject(cwd), executor: fakeExecutor() });
+  const { pi } = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(pi.engine, 'claude');
+  assert.equal(pi.name, 'Claude Code');
+  assert.equal(pi.credentials, null);
+  assert.deepEqual(pi.models, { planner: 'sonnet', implementer: 'opus', validator: 'opus' });
+  const refused = await post('/api/credentials', { apiKey: 'sk-good' });
+  assert.equal(refused.status, 409);
+  assert.match((await refused.json()).error, /usa tu sesión/);
+  await post('/api/projects/select');
+  await post('/api/queue', { taskIds: ['example'] });
+  await until(() => queue.data.runs[0].status === 'review');
+  assert.deepEqual(queue.data.runs[0].steps.map(({ role, provider, model }) => [role, provider, model]), [['planner', 'claude-code', 'sonnet'], ['implementer', 'claude-code', 'opus'], ['validator', 'claude-code', 'opus']]);
+});
+
 test('un servidor no puede sobrescribir el estado de otro servidor vivo', async (t) => {
   const { statePath } = await start(t);
   assert.throws(() => createHarnessServer({ statePath, piVersion: 'fixture' }), /Ya hay un servidor/);

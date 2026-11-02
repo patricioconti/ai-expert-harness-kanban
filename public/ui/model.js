@@ -86,7 +86,7 @@ export function notices(state, { online }) {
   if (state.error) items.push({ level: 'error', text: `No se pudo cargar el proyecto: ${state.error}` });
   if (!state.project) return items;
   if (!state.runtime.ready) items.push({ level: 'error', text: `El backlog está cargado, pero no se puede ejecutar: ${state.runtime.error}` });
-  if (!state.pi.installed) items.push({ level: 'error', text: 'El backlog está cargado. Instala Pi para poder ejecutar las features.' });
+  if (!state.pi.installed) items.push({ level: 'error', text: `El backlog está cargado. Instala ${state.pi.name ?? 'Pi'} para poder ejecutar las features.` });
   if (state.pi.credentials && !state.pi.credentials.configured) items.push({ level: 'warn', text: 'Falta la API key de DevExpert Inference. Configúrala para que Pi pueda ejecutar los roles.', action: 'credentials', actionLabel: 'Configurar API key' });
   if (state.review?.error) items.push({ level: 'error', text: state.review.error });
   return items;
