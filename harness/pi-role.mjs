@@ -14,8 +14,9 @@ export function resultSchema(roleName) {
     : `{"outcome":"${roleName === 'planner' ? 'ready' : 'passing'}|block","summary":"...","evidence":["actual result"],"files":["every path changed by you"],"testing":"concrete local testing steps"}`;
 }
 
-export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [] }) {
+export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [], handoff }) {
   const schema = resultSchema(role.name);
+  handoff ??= `End your final response with exactly one <harness-result>${schema}</harness-result> JSON object, replacing placeholders with actual results. Include all changed/reviewed file paths. If unable to proceed, return block and explain why. This structured handoff does not replace the project skill.`;
   return [
     `Selected feature: ${task.id}: ${task.title}. Objective: ${task.objective}`,
     `Your configured role: ${role.name}. Use $${role.skillName}.`,
@@ -33,7 +34,7 @@ export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline
     role.name === 'implementer' && humanFeedback ? 'The planner has already updated the specification for this feedback. Implement against it; do not edit the specification.' : '',
     role.name === 'implementer' ? 'Update only the selected feature to passing after actual verification, with evidence; update PROGRESS.md. Never set accepted.' : '',
     role.name === 'validator' ? 'Inspect independently and rerun checks. Do not modify any tracked or untracked file; return validation in the response. A failed or unrun required gate cannot be accept.' : '',
-    `End your final response with exactly one <harness-result>${schema}</harness-result> JSON object, replacing placeholders with actual results. Include all changed/reviewed file paths. If unable to proceed, return block and explain why. This structured handoff does not replace the project skill.`
+    handoff
   ].filter(Boolean).join('\n\n');
 }
 
@@ -76,7 +77,7 @@ export function validateRoleResult(result, role) {
   return { outcome: roleOutcome, verdict, summary, evidence, files, repairBrief, testing };
 }
 
-const clip = (value, length = 160) => {
+export const clip = (value, length = 160) => {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text.length > length ? `${text.slice(0, length - 1)}…` : text;
 };

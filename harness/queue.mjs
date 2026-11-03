@@ -121,6 +121,8 @@ export class FeatureQueue {
   fail(run, error) {
     run.status = this.closed ? 'interrupted' : 'blocked';
     run.error = error.message;
+    // An exhausted subscription would fail every queued feature the same way.
+    if (error.pauseQueue) this.data.paused = true;
     this.event(run, { message: error.message, level: 'error' });
   }
   /** Each feature gets its own branch and worktree from the current base, so parallel runs never share files. */

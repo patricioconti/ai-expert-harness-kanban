@@ -179,3 +179,16 @@ test('continuar desde este paso reanuda una cola pausada por un reinicio', async
   await until(() => restored.data.runs[0].status === 'review');
   assert.equal(restored.data.paused, false);
 });
+
+test('un límite de suscripción agotado pausa la cola y no arranca las siguientes', async () => {
+  const calls = [];
+  const exhausted = async ({ task }) => { calls.push(task.id); throw Object.assign(new Error('Se agotó el límite de tu suscripción de Claude Code'), { pauseQueue: true }); };
+  const { queue } = setup([feature('first'), feature('second')], exhausted, { maxParallel: 1 });
+  queue.enqueue(['first', 'second']);
+  await until(() => byTask(queue, 'first').status === 'blocked');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(queue.data.paused, true);
+  assert.deepEqual(calls, ['first']);
+  assert.equal(byTask(queue, 'second').status, 'queued');
+  assert.match(byTask(queue, 'first').error, /límite de tu suscripción/);
+});
