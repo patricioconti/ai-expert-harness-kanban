@@ -51,6 +51,7 @@ Con Pi real hace falta Pi instalado y la clave de DevExpert Inference: la del en
 | `rpc-by-hand.sh` | Pi en modo RPC dentro de una copia de tu proyecto. Pegas una línea JSON y ves pasar herramientas, respuesta y `agent_settled`. |
 | `permissions.mjs` | El motor respeta tu arnés: una extensión de Pi aplica los `permission` de `.opencode/agents/<rol>.md` antes de cada herramienta. Con `--no-permissions` las reglas vuelven a ser texto. `--probe <rol> <herramienta> <ruta>` comprueba una regla sin modelo. |
 | `fake-pi.mjs` | El Pi de ensayo: habla el mismo protocolo RPC y hace un trabajo mínimo por rol. También lo usa el Kanban con `pnpm dev:ensayo`. |
+| `fake-claude.mjs` | El Claude Code de ensayo: habla stream-json como `claude -p`, responde a `auth status` y hace un trabajo mínimo por rol. Lo usa el Kanban con `pnpm dev:ensayo:claude`; `FAKE_CLAUDE_LOGIN`, `FAKE_CLAUDE_LIMIT` y `FAKE_CLAUDE_CHEAT` ensayan una sesión cerrada, un límite agotado y un validator que escribe. |
 
 Lo que añade el Kanban (`../../harness`) sobre esto es producto: cola con dependencias, una rama y un worktree por feature, varias a la vez, estado persistente y recuperación tras un corte, PRs con revisión humana y una UI con la actividad de cada rol. Sus reglas son las mismas: [`harness/feature-flow.mjs`](../../harness/feature-flow.mjs).
 
