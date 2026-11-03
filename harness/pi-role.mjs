@@ -14,7 +14,8 @@ export function resultSchema(roleName) {
     : `{"outcome":"${roleName === 'planner' ? 'ready' : 'passing'}|block","summary":"...","evidence":["actual result"],"files":["every path changed by you"],"testing":"concrete local testing steps"}`;
 }
 
-export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [], handoff }) {
+export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [], merge, handoff }) {
+  const base = merge?.name ? `the base branch ${merge.name}` : 'the base';
   const schema = resultSchema(role.name);
   handoff ??= `End your final response with exactly one <harness-result>${schema}</harness-result> JSON object, replacing placeholders with actual results. Include all changed/reviewed file paths. If unable to proceed, return block and explain why. This structured handoff does not replace the project skill.`;
   return [
@@ -26,6 +27,9 @@ export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline
     `Feature changes to inspect: ${JSON.stringify(files)}.`,
     humanFeedback ? `Human review requested changes to the previously accepted commit: ${humanFeedback}` : '',
     repairBrief && repairBrief !== humanFeedback ? `Independent validator repair brief: ${repairBrief}` : '',
+    merge ? `Conflict resolution. This feature was already accepted, and ${base} has since received other features. The host started merging ${base} into this branch; the result is in the working tree as uncommitted changes, and the host will make the merge commit. Conflicted files, still holding <<<<<<< ======= >>>>>>> markers: ${JSON.stringify(merge.conflicts)}. feature_list.json and PROGRESS.md were combined by the host.` : '',
+    merge && role.name === 'implementer' ? 'Resolve every conflict so that both this feature and what the base added keep working: no markers may remain. Then fix anything else the merge broke (callers, tests, docs), even in files that merged cleanly. Do not redesign either side. Run the full verification again, set the feature to passing with evidence, and add a short note to PROGRESS.md on how each conflict was resolved.' : '',
+    merge && role.name === 'validator' ? 'Review the conflict resolution: the conflicted files, the implementer changes, and that both sides of each conflict still behave as their specs say. Rerun the verification. Files that merged cleanly and nobody touched afterwards were reviewed on the base; you need not list them.' : '',
     'Read AGENTS.md and PROGRESS.md in the repository root. Resolve repository artifacts from cwd and skill references relative to their SKILL.md.',
     'Work on this feature only. Do not create further subagents. The host orchestrates the three independent roles.',
     'No hagas merge, push, deploy, cambios de credenciales ni operaciones de producción. Do not commit, stage, switch branches, or alter Git configuration/hooks. The host owns acceptance and the scoped commit.',
@@ -104,7 +108,7 @@ export function mapPiEvent(event, role) {
   return null;
 }
 
-export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, piBin = 'pi', provider = pinnedPi.provider, model = pinnedPi.model, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
+export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, merge, piBin = 'pi', provider = pinnedPi.provider, model = pinnedPi.model, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
   if (signal?.aborted) throw new Error('Ejecución cancelada');
   emit({ stage: roleStages[role.name], role: role.name, skill: role.skillName, message: `Pi · ${provider}/${model ?? role.model} · ${role.thinking}` });
   const system = [runtime.instructions.text, runtime.flow.text, role.developerInstructions, `Skill source: ${role.skill.path}\n${role.skill.text}`].join('\n\n');
@@ -182,6 +186,6 @@ export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, sig
       }
     });
     child.on('close', (code) => { if (!finished) finish(new Error(stderr.trim() || `Pi terminó sin resultado (código ${code})`)); });
-    child.stdin.write(`${JSON.stringify({ id: `${task.id}-${role.name}`, type: 'prompt', message: buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files }) })}\n`);
+    child.stdin.write(`${JSON.stringify({ id: `${task.id}-${role.name}`, type: 'prompt', message: buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files, merge }) })}\n`);
   });
 }

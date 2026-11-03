@@ -112,7 +112,7 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
       if (request.method === 'POST' && url.pathname === '/api/reviews/refresh') { queue.refreshReviews(); return json(response, 200, queue.snapshot()); }
       if (request.method === 'POST' && url.pathname === '/api/queue/pause') { queue.pause(); return json(response, 200, queue.snapshot()); }
       if (request.method === 'POST' && url.pathname === '/api/queue/resume') { queue.resume(); return json(response, 200, queue.snapshot()); }
-      const match = url.pathname.match(/^\/api\/runs\/([\w-]+)\/(stop|retry|discard|merge|reject)$/);
+      const match = url.pathname.match(/^\/api\/runs\/([\w-]+)\/(stop|retry|discard|merge|reject|resolve)$/);
       if (request.method === 'POST' && match) { queue.action(match[1], match[2], body); return json(response, 200, queue.snapshot()); }
       const path = request.method === 'GET' ? publicFile(url.pathname) : null;
       if (path) {

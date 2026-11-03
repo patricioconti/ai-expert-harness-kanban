@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -60,4 +60,25 @@ export function syncWithBase(cwd, baseRef) {
     git(cwd, 'commit', '--no-edit');
     return { changed: true, conflicts: [], resolved: conflicts };
   }
+}
+
+const conflictMarker = /^(<{7}|>{7}) /m;
+/** The paths that still hold a `<<<<<<<` or `>>>>>>>` conflict marker at the start of a line. */
+export function conflictMarkers(cwd, paths) {
+  return paths.filter((path) => { try { return conflictMarker.test(readFileSync(join(cwd, path), 'utf8')); } catch { return false; } });
+}
+
+/**
+ * Starts merging the base into a clean feature branch for a role to finish. State-file conflicts are
+ * resolved as in `syncWithBase`; the other conflicts keep their markers. The index and the merge state
+ * are then dropped, so the merge is plain working-tree changes a role can edit without staging; the
+ * host records the base commit and later makes the two-parent commit itself.
+ */
+export function startMerge(cwd, baseRef) {
+  const base = git(cwd, 'rev-parse', baseRef);
+  try { git(cwd, 'merge', '--no-ff', '--no-commit', baseRef); } catch {}
+  const unmerged = git(cwd, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean);
+  for (const path of unmerged.filter((item) => stateFiles.includes(item))) resolve(cwd, path);
+  git(cwd, 'reset', '--quiet');
+  return { base, conflicts: unmerged.filter((path) => !stateFiles.includes(path)) };
 }

@@ -191,6 +191,12 @@ $('detail').addEventListener('click', async (event) => {
       <p>Se conserva el commit actual. El implementer recibirá tu feedback, el validator volverá a revisar y se hará un commit de corrección.</p>`,
     input: { label: '¿Qué hay que cambiar?', placeholder: 'Describe qué falla o qué esperabas ver…', maxLength: 4000 } });
     if (feedback && await mutate(path, { feedback })) flash('Cambios enviados. La feature vuelve a la cola.');
+  } else if (action === 'resolve') {
+    const run = state.runs.find((item) => item.id === button.dataset.run);
+    const ok = await ask($('dialog'), { title: 'Resolver conflictos', confirm: 'Enviar al implementer', body: html`
+      <p>El harness empieza el merge de <code>${state.review?.base}</code> en <code>${run.branch}</code>. El implementer resuelve los conflictos en ${run.syncConflicts.join(', ')} y vuelve a verificar, el validator revisa la resolución y el harness hace el commit de merge.</p>
+      <p class="muted">No hay planner: la spec no cambia. La feature vuelve a tu revisión al terminar.</p>` });
+    if (ok && await mutate(path)) flash('Conflictos enviados al implementer. La feature vuelve a la cola.');
   } else if (action === 'merge') {
     const run = state.runs.find((item) => item.id === button.dataset.run);
     const github = state.review?.mode === 'github';

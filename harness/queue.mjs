@@ -107,7 +107,7 @@ export class FeatureQueue {
     if (this.active.has(candidate.id)) return false;
     const task = project.tasks.find((item) => item.id === candidate.taskId);
     if (!task || (task.blocked && !candidate.baseline)) return false;
-    return candidate.reopen || candidate.acceptance || task.dependsOn.every((id) => this.settled(project, id));
+    return candidate.reopen || candidate.resolve || candidate.acceptance || task.dependsOn.every((id) => this.settled(project, id));
   }
   /** Starts every queued feature whose dependencies are merged, up to the parallel limit. */
   pump() {
@@ -193,11 +193,15 @@ export class FeatureQueue {
       this.merge(run);
     } else if (action === 'reject' && run.status === 'review') {
       this.reject(run, body.feedback);
+    } else if (action === 'resolve' && run.status === 'review') {
+      this.resolve(run);
     } else throw new Error('Acción no disponible en el estado actual');
   }
   merge(run) {
     const review = this.review();
     const sync = review.sync(run);
+    run.syncConflicts = sync.conflicts;
+    this.save();
     if (sync.conflicts.length) throw new Error(`La rama choca con la base en ${sync.conflicts.join(', ')}; resuélvelo en la rama antes de integrar`);
     review.merge(run);
     this.refreshReviews();
@@ -212,6 +216,28 @@ export class FeatureQueue {
     run.status = 'changes-requested';
     run.feedback = feedback.trim();
     this.data.runs.push(this.newRun(project, task, { reopen: true, humanFeedback: run.feedback, repairBrief: run.feedback, previousRunId: run.id, worktree: run.worktree, branch: run.branch, baseRef: run.baseRef, pr: run.pr }));
+    this.save();
+    this.pump();
+  }
+  /**
+   * Brings a reviewed branch that collides with the base up to date through the roles: the host starts the
+   * merge, the implementer resolves the conflicts and reverifies, the validator reviews, and the host makes
+   * the merge commit. Without conflicts the branch is just updated.
+   */
+  resolve(run) {
+    const project = this.project();
+    const task = project.tasks.find((item) => item.id === run.taskId);
+    if (!task) throw new Error('La feature ya no existe en feature_list.json');
+    const sync = this.review().sync(run);
+    run.syncConflicts = sync.conflicts;
+    if (!sync.conflicts.length) {
+      this.event(run, { message: sync.changed ? 'Rama actualizada con la base; ya no hay conflictos' : 'La rama ya está al día con la base' });
+      this.save();
+      return;
+    }
+    run.status = 'changes-requested';
+    run.feedback = `Resolver los conflictos con la base en ${sync.conflicts.join(', ')}`;
+    this.data.runs.push(this.newRun(project, task, { resolve: { requested: sync.conflicts }, previousRunId: run.id, worktree: run.worktree, branch: run.branch, baseRef: this.review().baseRef(), pr: run.pr }));
     this.save();
     this.pump();
   }

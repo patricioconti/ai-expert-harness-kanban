@@ -66,7 +66,7 @@ Para ensayar sin suscripción: `pnpm dev:ensayo:claude` usa `examples/mini-harne
 
 Una dependencia solo cuenta cuando está **integrada** en la base: nada se construye sobre un cambio que no has revisado. Mientras tanto sus dependientes esperan en cola.
 
-Al integrar una feature, las demás ramas en revisión se actualizan con la base. Los conflictos de estado en `feature_list.json` (fusión por id) y `PROGRESS.md` (unión) se resuelven solos; cualquier otro conflicto se marca en la tarjeta para que lo resuelvas en la rama.
+Al integrar una feature, las demás ramas en revisión se actualizan con la base. Los conflictos de estado en `feature_list.json` (fusión por id) y `PROGRESS.md` (unión) se resuelven solos; cualquier otro conflicto se marca en la tarjeta. **Resolver conflictos** se lo encarga a los roles: el harness empieza el merge de la base en la rama, el implementer resuelve las marcas y vuelve a verificar, el validator revisa la resolución y el harness hace un commit de merge `chore: merge <base> into feat/<id>` con dos padres (sin planner, porque la spec no cambia). Si quedan marcas, la feature se bloquea antes del validator. También puedes resolverlo tú en la rama y volver a integrar.
 
 **Pausar cola** deja terminar lo que está en marcha. **Detener ejecución** interrumpe ese rol; el resto sigue. **Continuar desde este paso** conserva baseline y resultados. **Quitar de la cola** conserva rama y worktree para que los revises.
 
@@ -137,4 +137,4 @@ pnpm check:pi       # Protocolo RPC local, sin inferencia
 HARNESS_SOURCE_PROJECT=/ruta/al/proyecto DEVEXPERT_API_KEY=… pnpm check:pi:e2e
 ```
 
-Las pruebas cubren roles reales del adaptador, ciclo de reparación, paralelo con worktrees, revisión humana (integrar, sincronizar ramas y pedir cambios), adaptador de GitHub con gh simulado, API key, motor Claude Code (login, permisos por rol, límite agotado y el Claude Code de ensayo), procesos que dejan los roles, aceptación/commit, recuperación de escrituras interrumpidas, preservación de WIP, cola/dependencias, cancelación, persistencia, errores de proveedor, API HTTP y el modelo de vista de la UI. La prueba real usa una feature mínima en un repositorio temporal y conserva su ruta para inspección.
+Las pruebas cubren roles reales del adaptador, ciclo de reparación, paralelo con worktrees, revisión humana (integrar, sincronizar ramas, resolver conflictos y pedir cambios), adaptador de GitHub con gh simulado, API key, motor Claude Code (login, permisos por rol, límite agotado y el Claude Code de ensayo), procesos que dejan los roles, aceptación/commit, recuperación de escrituras interrumpidas, preservación de WIP, cola/dependencias, cancelación, persistencia, errores de proveedor, API HTTP y el modelo de vista de la UI. La prueba real usa una feature mínima en un repositorio temporal y conserva su ruta para inspección.

@@ -12,7 +12,8 @@ function actions(run, { busy, review }) {
     attentionStatuses.includes(run.status) && button('retry', 'Continuar desde este paso', 'primary'),
     ['queued', 'blocked', 'interrupted'].includes(run.status) && button('discard', 'Quitar de la cola', 'quiet'),
     run.status === 'review' && run.pr?.url && html`<a class="button primary" href="${run.pr.url}" target="_blank" rel="noopener noreferrer">Abrir PR #${run.pr.number} ↗</a>`,
-    run.status === 'review' && button('merge', github ? 'Mergear PR' : `Integrar en ${review?.base ?? 'la base'}`, github ? '' : 'primary'),
+    run.status === 'review' && run.syncConflicts?.length && button('resolve', 'Resolver conflictos', 'primary'),
+    run.status === 'review' && button('merge', github ? 'Mergear PR' : `Integrar en ${review?.base ?? 'la base'}`, github || run.syncConflicts?.length ? '' : 'primary'),
     run.status === 'review' && button('reject', 'Pedir cambios')
   ].filter(Boolean);
   return buttons.length ? html`<div class="toolbar detail-actions">${buttons}</div>` : '';
@@ -66,7 +67,7 @@ export function renderDetail(task, { all, busy, review }) {
     ${run?.status === 'review' ? html`<section class="review-box">
       <h3>Revisión humana</h3>
       <p>${run.pr?.url ? html`PR <a href="${run.pr.url}" target="_blank" rel="noopener noreferrer">#${run.pr.number}</a> contra <code>${review?.base}</code>` : html`Rama <code>${run.branch}</code> lista para integrar en <code>${review?.base}</code>`} · commit <code>${shortHash(run.commit)}</code>${run.files?.length ? html` · ${run.files.length} archivo(s)` : ''}. Las features que dependen de esta esperan a que la integres.</p>
-      ${run.syncConflicts?.length ? html`<p class="notice error">La base ha cambiado y choca en ${run.syncConflicts.join(', ')}. Resuélvelo en la rama y vuelve a intentarlo.</p>` : ''}
+      ${run.syncConflicts?.length ? html`<p class="notice error">La base ha cambiado y choca en ${run.syncConflicts.join(', ')}. «Resolver conflictos» se lo encarga al implementer y al validator, o resuélvelo tú en la rama y vuelve a intentarlo.</p>` : ''}
       ${run.reviewError ? html`<p class="notice warn">No se pudo consultar la PR: ${run.reviewError}</p>` : ''}
       ${run.worktree ? html`<h3>Probarlo en local</h3><p><code class="wrap">cd ${run.worktree}</code></p>` : ''}
       ${run.testing ? html`<h3>Cómo probarlo</h3><p class="pre-wrap">${run.testing}</p>` : ''}

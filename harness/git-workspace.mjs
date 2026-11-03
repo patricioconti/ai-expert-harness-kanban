@@ -56,3 +56,14 @@ export function scopedCommit(cwd, files, message) {
   git(cwd, 'commit', '-m', message);
   return git(cwd, 'rev-parse', 'HEAD');
 }
+
+/** Like `scopedCommit`, but the commit also has [parent] as its second parent: a merge the host finishes. */
+export function scopedMergeCommit(cwd, files, message, parent) {
+  assertUnstaged(cwd);
+  git(cwd, 'add', '--', ...files);
+  const head = git(cwd, 'rev-parse', 'HEAD');
+  const commit = execFileSync('git', ['commit-tree', git(cwd, 'write-tree'), '-p', head, '-p', parent, '-F', '-'], { cwd, input: message, encoding: 'utf8', timeout: 30_000 }).trim();
+  // The index already holds this tree, so moving the branch leaves a clean worktree.
+  git(cwd, 'update-ref', '-m', 'harness: merge', `refs/heads/${git(cwd, 'symbolic-ref', '--short', 'HEAD')}`, commit, head);
+  return commit;
+}

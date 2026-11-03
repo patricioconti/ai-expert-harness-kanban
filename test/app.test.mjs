@@ -71,6 +71,16 @@ test('el detalle en revisión ofrece aprobar o pedir cambios y muestra iteracion
   assert.equal(selectable(all[0]), false);
 });
 
+test('una rama en revisión que choca con la base ofrece resolver los conflictos', () => {
+  const clean = tasks(snapshot([accepted('a')], [run('a', 'review', { commit: '2222222222' })]));
+  assert.doesNotMatch(String(renderDetail(clean[0], { all: clean, busy: false, review: { mode: 'local', base: 'main' } })), /data-action="resolve"/);
+  const all = tasks(snapshot([accepted('a')], [run('a', 'review', { commit: '2222222222', syncConflicts: ['src/a.js'] })]));
+  const markup = String(renderDetail(all[0], { all, busy: false, review: { mode: 'local', base: 'main' } }));
+  assert.match(markup, /class="primary" data-action="resolve"[^>]*>Resolver conflictos/);
+  assert.match(markup, /class="" data-action="merge"/);
+  assert.match(markup, /choca en src\/a.js/);
+});
+
 test('una feature en cola no se puede volver a seleccionar y su tarjeta no inventa actividad', () => {
   const all = tasks(snapshot([task('a')], [run('a', 'queued')]));
   assert.equal(selectable(all[0]), false);

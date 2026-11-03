@@ -6,7 +6,8 @@ import { loadRuntime, roleStages, digest } from './project-runtime.mjs';
 import { runPiRole, validateRoleResult } from './pi-role.mjs';
 import { reapLeftovers } from './reap.mjs';
 import { pinnedPi } from './pi-config.mjs';
-import { assertWorkspace, featureChanges, fileHash, git, sameSnapshot, scopedCommit, snapshot, startWorkspace } from './git-workspace.mjs';
+import { assertWorkspace, featureChanges, fileHash, git, sameSnapshot, scopedCommit, scopedMergeCommit, snapshot, startWorkspace } from './git-workspace.mjs';
+import { conflictMarkers, startMerge } from './branch-sync.mjs';
 import { jsonLike } from './json-text.mjs';
 
 const temporaryPath = (path) => `${path}.harness-tmp`;
@@ -67,7 +68,9 @@ async function finalize({ run, cwd, save, emit }) {
     }
     acceptance.hashes = Object.fromEntries(acceptance.files.map((path) => [path, fileHash(cwd, path)]));
     save();
-    run.commit = scopedCommit(cwd, acceptance.files, acceptance.message);
+    run.commit = run.resolve
+      ? scopedMergeCommit(cwd, acceptance.files, acceptance.message, run.resolve.base)
+      : scopedCommit(cwd, acceptance.files, acceptance.message);
   }
   run.stage = 'review';
   run.status = 'review';
@@ -76,15 +79,35 @@ async function finalize({ run, cwd, save, emit }) {
   emit({ message: `Aceptación independiente y commit ${run.commit.slice(0, 8)} en ${run.branch ?? 'la rama de la feature'}.` });
 }
 
+/**
+ * Conflict resolution: the host starts merging the base into the reviewed branch, and the implementer
+ * finishes it. Every merged file is owned by the run; the ones that merged cleanly are already reviewed
+ * on the base, so the validator only has to declare them if a role changed them afterwards.
+ */
+function beginMerge({ run, cwd, save, emit }) {
+  if (run.resolve.merged) return;
+  if (Object.keys(snapshot(cwd)).length) throw new Error('El worktree tiene cambios sin commit; revísalos antes de resolver los conflictos');
+  run.baseline = startWorkspace(cwd);
+  Object.assign(run.resolve, startMerge(cwd, run.baseRef), { name: run.baseRef.replace(/^refs\/(heads|remotes)\//, ''), merged: true });
+  run.resolve.clean = Object.fromEntries(Object.keys(snapshot(cwd)).filter((path) => !run.resolve.conflicts.includes(path)).map((path) => [path, fileHash(cwd, path)]));
+  writeFeatureStatus(cwd, run.taskId, 'in_progress');
+  run.ownedFiles = [...new Set([...featureChanges(cwd, run.baseline), 'feature_list.json'])];
+  run.nextRole = 'implementer';
+  save();
+  emit({ message: `Merge de ${run.resolve.name} preparado; conflictos para el implementer en ${run.resolve.conflicts.join(', ') || 'ningún archivo'}` });
+}
+
 export async function executeFeature({ run, cwd, signal, save, emit, executor = runPiRole, piOptions = {}, maxRepairs = 3, reap = reapLeftovers }) {
+  if (run.resolve) beginMerge({ run, cwd, save, emit });
+  // Read after the merge: the base may bring new skills or role instructions.
   const runtime = loadRuntime(cwd);
   if (run.runtimeHash && run.runtimeHash !== runtime.fingerprint) throw new Error('Han cambiado las skills o los subagentes durante la ejecución. Revisa la ejecución antes de descartarla y empezar otra');
-  if (!run.baseline) {
-    run.baseline = startWorkspace(cwd);
+  if (!run.runtimeHash) {
+    run.baseline ??= startWorkspace(cwd);
     run.inventory = readFeatures(cwd);
     run.runtimeHash = runtime.fingerprint;
     run.sources = runtime.sources;
-    run.ownedFiles = [];
+    run.ownedFiles ??= [];
     run.steps = [];
     save();
   }
@@ -125,7 +148,7 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     save();
     const roleStarted = Date.now();
     let result;
-    try { result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, files: featureChanges(cwd, run.baseline), ...piOptions }); }
+    try { result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, merge: run.resolve, files: featureChanges(cwd, run.baseline), ...piOptions }); }
     finally {
       // Before the snapshot: a leftover process could still be writing into the worktree.
       const reaped = await reap(cwd, roleStarted);
@@ -164,6 +187,8 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     } else if (roleName === 'implementer') {
       if (task.sourceStatus !== 'passing' || !task.evidence.length) throw new Error('Implementer no ha dejado passing con evidencia en feature_list.json');
       if (!existsSync(join(cwd, 'PROGRESS.md'))) throw new Error('Implementer no ha dejado PROGRESS.md');
+      const unresolved = run.resolve ? conflictMarkers(cwd, run.resolve.conflicts) : [];
+      if (unresolved.length) throw new Error(`Implementer dejó marcas de conflicto en ${unresolved.join(', ')}`);
       roleName = 'validator';
     } else if (result.verdict === 'revise') {
       run.repairBrief = result.repairBrief;
@@ -174,7 +199,8 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     } else {
       if (task.sourceStatus !== 'passing') throw new Error('Solo una feature passing puede recibir aceptación independiente');
       const files = featureChanges(cwd, run.baseline);
-      if (files.some((path) => !run.ownedFiles.includes(path) || !result.files.includes(path))) throw new Error('Hay cambios sin autoría o sin revisión del validator; no se hará un commit mixto');
+      const reviewed = (path) => result.files.includes(path) || run.resolve?.clean?.[path] === fileHash(cwd, path);
+      if (files.some((path) => !run.ownedFiles.includes(path) || !reviewed(path))) throw new Error('Hay cambios sin autoría o sin revisión del validator; no se hará un commit mixto');
       const listText = readFileSync(join(cwd, 'feature_list.json'), 'utf8');
       const features = JSON.parse(listText);
       const selected = features.find((item) => item.id === task.id);
@@ -184,7 +210,7 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
       const allFiles = [...new Set([...files, 'feature_list.json', 'PROGRESS.md'])].sort();
       run.acceptance = {
         files: allFiles, beforeHashes: Object.fromEntries(allFiles.map((path) => [path, fileHash(cwd, path)])),
-        message: `${run.reopen ? `fix: address review of ${task.id}` : `feat: complete ${task.id}`}\n\nHarness-Run: ${run.id}`,
+        message: `${run.resolve ? `chore: merge ${run.resolve.name} into ${run.branch}` : run.reopen ? `fix: address review of ${task.id}` : `feat: complete ${task.id}`}\n\nHarness-Run: ${run.id}`,
         documents: {
           'feature_list.json': jsonLike(listText, features),
           'PROGRESS.md': `${progress.trimEnd()}\n\n## ${task.id} · independent validator accept\n\n${result.summary}\n\n${result.evidence.map((item) => `- ${item}`).join('\n')}\n\nCómo probarlo: ${result.testing}\n`

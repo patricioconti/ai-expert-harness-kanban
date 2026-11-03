@@ -39,6 +39,15 @@ test('el feedback de revisión humana llega al implementer', () => {
   assert.match(buildPiPrompt({ task, role, humanFeedback: 'Usa otro color', repairBrief: 'Usa otro color' }), /Human review requested changes[^]*Usa otro color/);
   assert.doesNotMatch(buildPiPrompt({ task, role, humanFeedback: 'Usa otro color', repairBrief: 'Usa otro color' }), /validator repair brief/);
 });
+test('al resolver conflictos, el implementer y el validator saben qué merge terminar', () => {
+  const merge = { name: 'main', conflicts: ['src/a.js'] };
+  const implementer = buildPiPrompt({ task, role: { ...role, name: 'implementer' }, merge });
+  assert.match(implementer, /Conflict resolution[^]*base branch main[^]*\["src\/a.js"\]/);
+  assert.match(implementer, /no markers may remain/);
+  const validator = buildPiPrompt({ task, role: { ...role, name: 'validator' }, merge });
+  assert.match(validator, /Review the conflict resolution/);
+  assert.doesNotMatch(buildPiPrompt({ task, role }), /Conflict resolution/);
+});
 test('el handoff conserva límites, baseline y repair brief', () => {
   const prompt = buildPiPrompt({ task, role, repairBrief: 'Fix boundary', baseline: { head: 'abc', dirty: { 'user.txt': 'hash' } } });
   assert.match(prompt, /No hagas merge, push, deploy/);

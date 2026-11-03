@@ -212,3 +212,88 @@ test('si el implementer toca la spec, continuar vuelve al planner y el commit co
   assert.ok(committed.includes('src/search.js'));
   assert.ok(committed.includes('docs/specs/search.md'));
 });
+
+/** Both features write src/shared.js, so integrating one leaves the other in conflict with the base. */
+function conflicting({ calls = [], leaveMarkers = false } = {}) {
+  const inner = fakeExecutor({ calls });
+  return async (context) => {
+    const { cwd, task, role, merge } = context;
+    if (!merge) {
+      const result = await inner(context);
+      if (role.name === 'implementer') {
+        writeFileSync(join(cwd, 'src/shared.js'), `export const owner = '${task.id}';\n`);
+        result.files.push('src/shared.js');
+      }
+      return result;
+    }
+    calls.push(`${task.id}:${role.name}:merge`);
+    const evidence = ['node --test: 1 passed, 0 failed (fixture)'];
+    if (role.name === 'implementer') {
+      if (!leaveMarkers) writeFileSync(join(cwd, 'src/shared.js'), "export const owners = ['first', 'second'];\n");
+      const features = JSON.parse(readFileSync(join(cwd, 'feature_list.json')));
+      Object.assign(features.find((item) => item.id === task.id), { status: 'passing' });
+      writeFileSync(join(cwd, 'feature_list.json'), `${JSON.stringify(features, null, 2)}\n`);
+      writeFileSync(join(cwd, 'PROGRESS.md'), `${readFileSync(join(cwd, 'PROGRESS.md'), 'utf8')}\nshared.js keeps both owners\n`);
+      return { outcome: 'passing', summary: 'Conflicts resolved', evidence, files: ['src/shared.js', 'feature_list.json', 'PROGRESS.md'] };
+    }
+    // Lists only what the resolution touched: the files that merged cleanly were reviewed on the base.
+    return { verdict: 'accept', summary: 'Resolution keeps both features', evidence, testing: 'Run node --test', files: ['src/shared.js', 'feature_list.json', 'PROGRESS.md'] };
+  };
+}
+
+test('resolver conflictos: el implementer termina el merge, el validator lo revisa y queda un commit de merge integrable', async () => {
+  const calls = [];
+  const { queue, cwd } = setup([feature('first'), feature('second')], conflicting({ calls }));
+  queue.enqueue(['first', 'second']);
+  await until(() => queue.data.runs.every((run) => run.status === 'review'));
+  queue.action(byTask(queue, 'first').id, 'merge');
+  const original = byTask(queue, 'second');
+  assert.deepEqual(original.syncConflicts, ['src/shared.js']);
+  assert.throws(() => queue.action(original.id, 'merge'), /choca con la base en src\/shared.js/);
+
+  queue.action(original.id, 'resolve');
+  assert.equal(original.status, 'changes-requested');
+  const resolving = () => queue.data.runs.find((run) => run.resolve);
+  await until(() => resolving()?.status === 'review');
+  const run = resolving();
+  assert.deepEqual(calls.slice(-2), ['second:implementer:merge', 'second:validator:merge'], 'no planner');
+  assert.equal(run.branch, original.branch);
+  assert.deepEqual(run.resolve.conflicts, ['src/shared.js']);
+  const parents = git(run.worktree, 'log', '-1', '--format=%P').split(' ');
+  assert.equal(parents.length, 2, 'a merge commit');
+  assert.equal(parents[1], git(cwd, 'rev-parse', 'main'));
+  assert.match(git(run.worktree, 'log', '-1', '--format=%s'), /^chore: merge main into feat\/second/);
+  assert.equal(git(run.worktree, 'status', '--porcelain'), '');
+  assert.ok(readFileSync(join(run.worktree, 'src/first.js')), 'the base side is in the branch');
+
+  queue.action(run.id, 'merge');
+  assert.equal(run.status, 'done');
+  assert.equal(readFileSync(join(cwd, 'src/shared.js'), 'utf8'), "export const owners = ['first', 'second'];\n");
+  assert.deepEqual(inspectProject(cwd).tasks.map((task) => task.sourceStatus), ['accepted', 'accepted']);
+  assert.equal(git(cwd, 'status', '--porcelain'), '');
+});
+
+test('resolver conflictos: si quedan marcas, el host no deja pasar al validator', async () => {
+  const calls = [];
+  const { queue } = setup([feature('first'), feature('second')], conflicting({ calls, leaveMarkers: true }));
+  queue.enqueue(['first', 'second']);
+  await until(() => queue.data.runs.every((run) => run.status === 'review'));
+  queue.action(byTask(queue, 'first').id, 'merge');
+  queue.action(byTask(queue, 'second').id, 'resolve');
+  const resolving = () => queue.data.runs.find((run) => run.resolve);
+  await until(() => resolving()?.status === 'blocked');
+  assert.match(resolving().error, /marcas de conflicto en src\/shared.js/);
+  assert.ok(!calls.includes('second:validator:merge'));
+});
+
+test('resolver conflictos sin conflictos solo actualiza la rama', async () => {
+  const { queue } = setup([feature('first'), feature('second')]);
+  queue.enqueue(['first', 'second']);
+  await until(() => queue.data.runs.every((run) => run.status === 'review'));
+  queue.action(byTask(queue, 'first').id, 'merge');
+  const second = byTask(queue, 'second');
+  queue.action(second.id, 'resolve');
+  assert.equal(second.status, 'review');
+  assert.ok(!queue.data.runs.some((run) => run.resolve));
+  assert.match(second.events.at(-1).message, /ya está al día|ya no hay conflictos/);
+});
