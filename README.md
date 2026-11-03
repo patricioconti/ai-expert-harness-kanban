@@ -47,7 +47,7 @@ Para ensayar sin suscripción: `pnpm dev:ensayo:claude` usa `examples/mini-harne
 
 ## Uso
 
-1. **Abrir proyecto…**: selecciona la raíz Git con el selector nativo de macOS. El harness detecta cómo se revisa: **GitHub** si `origin` está en GitHub y `gh` está autenticado; si no, **ramas locales**. `HARNESS_REVIEW=local|github` lo fuerza.
+1. **Abrir proyecto…**: selecciona la raíz Git con el selector nativo de macOS. Para abrirlo ya seleccionado, arranca con `HARNESS_PROJECT=/ruta/al/proyecto`; el proyecto debe existir y cumplir el contrato, o el servidor no arranca. El harness detecta cómo se revisa: **GitHub** si `origin` está en GitHub y `gh` está autenticado; si no, **ramas locales**. `HARNESS_REVIEW=local|github` lo fuerza.
 2. Marca las features pendientes. Al marcar una se añaden sus dependencias; al desmarcarla se quitan las que dependían de ella.
 3. **Ejecutar selección** muestra el orden y lanza la cola. Las features cuyas dependencias ya están integradas avanzan **en paralelo** (`HARNESS_PARALLEL`, 3 por defecto).
 4. Cada feature trabaja en su propia rama `feat/<id>` y su propio worktree, creados desde la base actual (`origin/<base>` recién descargada en GitHub). Tu checkout no se toca. Se copian `.env`, `.env.local` y `.env.test` si existen; dependencias y puertos siguen siendo cosa del proyecto.

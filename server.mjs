@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chooseProject } from './harness/project-selector.mjs';
+import { inspectProject } from './harness/project-contract.mjs';
 import { StateStore } from './harness/state-store.mjs';
 import { FeatureQueue } from './harness/queue.mjs';
 import { acquireServerLock } from './harness/server-lock.mjs';
@@ -56,6 +57,13 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
   const maxParallel = Math.max(1, Math.min(8, Number(env.HARNESS_PARALLEL ?? 3) || 3));
   try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials: credentials ?? login, maxParallel, ...queueOptions }); }
   catch (error) { release(); throw error; }
+  // A launcher can open the board on a project directly; the native folder picker needs a person.
+  if (env.HARNESS_PROJECT) {
+    try {
+      const project = inspectProject(resolve(env.HARNESS_PROJECT));
+      if (queue.data.projectPath !== project.path) queue.select(project);
+    } catch (error) { release(); throw new Error(`HARNESS_PROJECT: ${error.message}`); }
+  }
   let selecting = false;
   const server = createServer(async (request, response) => {
     try {

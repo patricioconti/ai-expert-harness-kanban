@@ -112,6 +112,21 @@ test('HTTP: con Pi no existe la comprobación de sesión de Claude Code', async 
   assert.equal((await post('/api/login/refresh')).status, 409);
 });
 
+test('HARNESS_PROJECT abre el tablero con el proyecto ya seleccionado', async (t) => {
+  const cwd = fixture();
+  const { base } = await start(t, { env: { HARNESS_PROJECT: cwd } });
+  const state = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(state.projectPath, cwd);
+  assert.equal(state.project.tasks.length, 1);
+  assert.equal(state.review.mode, 'local');
+  const statePath = join(fixture(), 'state.json');
+  assert.throws(() => createHarnessServer({ statePath, piVersion: 'fixture', env: { HARNESS_PROJECT: '/no/such/project' } }), /HARNESS_PROJECT: /);
+  // The failed start released its lock, so another server can take the same state.
+  const retry = createHarnessServer({ statePath, piVersion: 'fixture', env: {} });
+  await retry.queue.close();
+  retry.server.close();
+});
+
 test('un servidor no puede sobrescribir el estado de otro servidor vivo', async (t) => {
   const { statePath } = await start(t);
   assert.throws(() => createHarnessServer({ statePath, piVersion: 'fixture' }), /Ya hay un servidor/);
