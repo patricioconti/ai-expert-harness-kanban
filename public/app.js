@@ -93,7 +93,8 @@ function render() {
   if (task) patch($('detail'), renderDetail(task, { all, busy, review: state.review }));
   const key = state.pi.credentials;
   $('credentials').hidden = !key;
-  $('credentials').textContent = key?.configured ? { env: 'API key · entorno', ui: 'API key · esta sesión', saved: 'API key · guardada' }[key.source] : 'Configurar API key';
+  $('credentials').textContent = key?.kind === 'login' ? (key.configured ? `Sesión · ${key.plan ?? 'Claude'}` : 'Revisar sesión')
+    : key?.configured ? { env: 'API key · entorno', ui: 'API key · esta sesión', saved: 'API key · guardada' }[key.source] : 'Configurar API key';
   $('credentials').classList.toggle('attention', Boolean(key && !key.configured));
   $('check-reviews').hidden = state.review?.mode !== 'github' || !state.runs.some((run) => run.status === 'review');
 }
@@ -125,7 +126,18 @@ async function configureCredentials() {
   input: { type: 'password', label: 'API key', placeholder: 'sk-…' }, checkbox: { label: 'Recordarla en este equipo (archivo local con permisos 600)' } });
   if (answer?.value && await mutate('/api/credentials', { apiKey: answer.value, remember: answer.checked })) flash('API key comprobada. Pi ya puede ejecutar los roles.');
 }
+async function showLogin() {
+  const login = state.pi.credentials;
+  const choice = await ask($('dialog'), { title: 'Sesión de Claude Code', confirm: 'Comprobar de nuevo', body: html`
+    <p>${login.configured ? `Los roles usan tu suscripción ${login.plan ?? ''} de claude.ai, sin API key.` : login.problem}</p>
+    ${login.email ? html`<p class="muted">${login.email}${login.org ? ` · ${login.org}` : ''}</p>` : ''}` });
+  if (!choice || !await mutate('/api/login/refresh')) return;
+  const checked = state.pi.credentials;
+  flash(checked.configured ? 'Sesión comprobada. Los roles usan tu suscripción.' : checked.problem, checked.configured ? undefined : 'error');
+}
+const credentialsAction = () => (state?.pi.credentials?.kind === 'login' ? showLogin() : configureCredentials());
 $('credentials').addEventListener('click', async () => {
+  if (state?.pi.credentials?.kind === 'login') return showLogin();
   if (!state?.pi.credentials?.configured || state.pi.credentials.source === 'env') return configureCredentials();
   const choice = await ask($('dialog'), { title: 'API key configurada', confirm: 'Cambiar clave', body: html`<p>${state.pi.credentials.source === 'saved' ? 'Está guardada en este equipo.' : 'Solo está en memoria: se olvida al reiniciar el servidor.'}</p><p><button class="link" data-forget>Olvidar la clave</button></p>` });
   if (choice) await configureCredentials();
@@ -135,7 +147,7 @@ $('dialog').addEventListener('click', async (event) => {
   $('dialog').close('cancel');
   if (await mutate('/api/credentials/clear')) flash('Clave olvidada.');
 });
-$('notices').addEventListener('click', (event) => { if (event.target.closest('[data-notice-action=credentials]')) void configureCredentials(); });
+$('notices').addEventListener('click', (event) => { if (event.target.closest('[data-notice-action=credentials]')) void credentialsAction(); });
 $('check-reviews').addEventListener('click', () => mutate('/api/reviews/refresh'));
 $('pause').addEventListener('click', () => mutate(`/api/queue/${state.paused ? 'resume' : 'pause'}`));
 $('execute').addEventListener('click', async () => {

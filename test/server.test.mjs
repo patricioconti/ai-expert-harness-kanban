@@ -74,11 +74,12 @@ test('HTTP: la API key se comprueba, no vuelve al navegador y solo se guarda si 
 
 test('HTTP: con el motor claude cada rol usa su modelo y no se pide API key', async (t) => {
   const cwd = fixture();
-  const { post, base, queue } = await start(t, { env: { HARNESS_ENGINE: 'claude' }, select: async () => inspectProject(cwd), executor: fakeExecutor() });
+  const { post, base, queue } = await start(t, { env: { HARNESS_ENGINE: 'claude' }, readAuth: () => ({ ok: true, plan: 'Team', problem: null }), select: async () => inspectProject(cwd), executor: fakeExecutor() });
   const { pi } = await (await fetch(`${base}/api/state`)).json();
   assert.equal(pi.engine, 'claude');
   assert.equal(pi.name, 'Claude Code');
-  assert.equal(pi.credentials, null);
+  assert.equal(pi.credentials.kind, 'login');
+  assert.equal(pi.credentials.configured, true);
   assert.deepEqual(pi.models, { planner: 'sonnet', implementer: 'opus', validator: 'opus' });
   const refused = await post('/api/credentials', { apiKey: 'sk-good' });
   assert.equal(refused.status, 409);
@@ -87,6 +88,28 @@ test('HTTP: con el motor claude cada rol usa su modelo y no se pide API key', as
   await post('/api/queue', { taskIds: ['example'] });
   await until(() => queue.data.runs[0].status === 'review');
   assert.deepEqual(queue.data.runs[0].steps.map(({ role, provider, model }) => [role, provider, model]), [['planner', 'claude-code', 'sonnet'], ['implementer', 'claude-code', 'opus'], ['validator', 'claude-code', 'opus']]);
+});
+
+test('HTTP: sin sesión de Claude Code no se encola y se puede volver a comprobar', async (t) => {
+  const cwd = fixture();
+  let answer = { ok: false, problem: 'No hay sesión en Claude Code. Inicia sesión con «claude auth login» y comprueba de nuevo' };
+  const { post, base, queue } = await start(t, { env: { HARNESS_ENGINE: 'claude' }, readAuth: () => answer, select: async () => inspectProject(cwd), executor: fakeExecutor() });
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).pi.credentials.configured, false);
+  await post('/api/projects/select');
+  const refused = await post('/api/queue', { taskIds: ['example'] });
+  assert.equal(refused.status, 409);
+  assert.match((await refused.json()).error, /claude auth login/);
+  assert.equal(queue.data.runs.length, 0);
+  answer = { ok: true, plan: 'Max', problem: null };
+  const checked = await (await post('/api/login/refresh')).json();
+  assert.equal(checked.pi.credentials.plan, 'Max');
+  assert.equal((await post('/api/queue', { taskIds: ['example'] })).status, 202);
+  await until(() => queue.data.runs[0].status === 'review');
+});
+
+test('HTTP: con Pi no existe la comprobación de sesión de Claude Code', async (t) => {
+  const { post } = await start(t);
+  assert.equal((await post('/api/login/refresh')).status, 409);
 });
 
 test('un servidor no puede sobrescribir el estado de otro servidor vivo', async (t) => {

@@ -10,6 +10,7 @@ import { FeatureQueue } from './harness/queue.mjs';
 import { acquireServerLock } from './harness/server-lock.mjs';
 import { engineFor } from './harness/engine.mjs';
 import { Credentials, verifyKey } from './harness/credentials.mjs';
+import { ClaudeLogin, readClaudeAuth } from './harness/claude-auth.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicRoot = join(root, 'public');
@@ -37,7 +38,7 @@ async function readJson(request) {
   try { return body ? JSON.parse(body) : {}; } catch { throw new RequestError(400, 'El cuerpo no es JSON válido'); }
 }
 
-export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH ?? join(root, '.harness-data/state.json'), select = chooseProject, executor, piVersion, piOptions = {}, env = process.env, verify = verifyKey, queueOptions = {} } = {}) {
+export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH ?? join(root, '.harness-data/state.json'), select = chooseProject, executor, piVersion, piOptions = {}, env = process.env, verify = verifyKey, readAuth = readClaudeAuth, queueOptions = {} } = {}) {
   statePath = resolve(statePath); // HARNESS_STATE_PATH may be relative (pnpm dev:ensayo)
   const release = acquireServerLock(statePath);
   let engine;
@@ -51,8 +52,9 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
   let queue;
   // Only Pi needs the DevExpert key; Claude Code uses the person's own login.
   const credentials = engine.id === 'pi' ? new Credentials({ path: join(dirname(statePath), 'credentials.json'), env }) : null;
+  const login = engine.id === 'claude' ? new ClaudeLogin({ claudeBin: options.claudeBin, env, read: readAuth }) : null;
   const maxParallel = Math.max(1, Math.min(8, Number(env.HARNESS_PARALLEL ?? 3) || 3));
-  try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials, maxParallel, ...queueOptions }); }
+  try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials: credentials ?? login, maxParallel, ...queueOptions }); }
   catch (error) { release(); throw error; }
   let selecting = false;
   const server = createServer(async (request, response) => {
@@ -85,6 +87,11 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
       if (request.method === 'POST' && url.pathname === '/api/queue') {
         queue.enqueue(body.taskIds);
         return json(response, 202, queue.snapshot());
+      }
+      if (request.method === 'POST' && url.pathname === '/api/login/refresh') {
+        if (!login) throw new RequestError(409, `${engine.name} no usa la sesión de Claude Code`);
+        login.refresh();
+        return json(response, 200, queue.snapshot());
       }
       if (request.method === 'POST' && url.pathname.startsWith('/api/credentials') && !credentials) throw new RequestError(409, `${engine.name} usa tu sesión, no una API key`);
       if (request.method === 'POST' && url.pathname === '/api/credentials') {

@@ -72,6 +72,9 @@ export class FeatureQueue {
   }
   enqueue(ids) {
     if (!this.piVersion) throw new Error(`${this.piOptions.engineName ?? 'Pi'} no está instalado`);
+    // A login can expire while the board is open, so it is checked again before anything starts.
+    const login = this.credentials?.refresh?.();
+    if (login && !login.ok) throw new Error(login.problem);
     const project = this.project();
     if (!project) throw new Error('Abre un proyecto primero');
     loadRuntime(project.path);

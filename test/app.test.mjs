@@ -50,6 +50,14 @@ test('los avisos se derivan del estado y desaparecen al corregirse', () => {
   assert.equal(notices(null, { online: false }).length, 1);
 });
 
+test('sin sesión de Claude Code el aviso explica qué falta y ofrece comprobarla', () => {
+  const state = snapshot([task('a')]);
+  state.pi = { ...state.pi, name: 'Claude Code', credentials: { kind: 'login', configured: false, problem: 'No hay sesión en Claude Code' } };
+  assert.deepEqual(notices(state, { online: true }).map(({ level, text, actionLabel }) => [level, text, actionLabel]), [['error', 'No hay sesión en Claude Code', 'Comprobar sesión']]);
+  state.pi.credentials = { kind: 'login', configured: true, problem: null };
+  assert.deepEqual(notices(state, { online: true }), []);
+});
+
 test('el detalle en revisión ofrece aprobar o pedir cambios y muestra iteraciones previas', () => {
   const previous = run('a', 'changes-requested', { id: 'old', commit: '1111111111', feedback: 'Cambia <el> botón' });
   const current = run('a', 'review', { id: 'new', commit: '2222222222', testing: 'Abre /health', files: ['src/a.js'], humanFeedback: 'Cambia <el> botón' });
