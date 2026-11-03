@@ -48,6 +48,11 @@ test('al resolver conflictos, el implementer y el validator saben qué merge ter
   assert.match(validator, /Review the conflict resolution/);
   assert.doesNotMatch(buildPiPrompt({ task, role }), /Conflict resolution/);
 });
+test('cada rol sabe qué dispositivo Android le toca, o que no hay ninguno libre', () => {
+  assert.match(buildPiPrompt({ task, role, device: 'emulator-5554' }), /Android device for this feature: emulator-5554[^]*never pass another serial/);
+  assert.match(buildPiPrompt({ task, role, device: null }), /No Android device is free[^]*Do not run adb/);
+  assert.doesNotMatch(buildPiPrompt({ task, role }), /Android device/);
+});
 test('el handoff conserva límites, baseline y repair brief', () => {
   const prompt = buildPiPrompt({ task, role, repairBrief: 'Fix boundary', baseline: { head: 'abc', dirty: { 'user.txt': 'hash' } } });
   assert.match(prompt, /No hagas merge, push, deploy/);

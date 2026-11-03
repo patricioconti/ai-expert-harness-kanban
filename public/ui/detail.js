@@ -55,7 +55,7 @@ export function renderDetail(task, { all, busy, review }) {
   const fixes = repairs(run);
   return html`<header class="detail-heading">
       <div><p class="eyebrow">${task.id} · ${task.area}</p><h2 id="detail-title">${task.title}</h2>
-        <p class="detail-badges">${task.live ? '' : html`<span class="chip">${task.gate}</span>`}${run ? html`<span class="chip tone-${run.status}">${statusLabels[run.status] ?? run.status}</span>` : ''}${fixes ? html`<span class="chip">Reparaciones ${fixes}/3</span>` : ''}</p>
+        <p class="detail-badges">${task.live ? '' : html`<span class="chip">${task.gate}</span>`}${run ? html`<span class="chip tone-${run.status}">${statusLabels[run.status] ?? run.status}</span>` : ''}${fixes ? html`<span class="chip">Reparaciones ${fixes}/3</span>` : ''}${run?.status === 'running' && run.device !== undefined ? html`<span class="chip">${run.device ? html`Dispositivo ${run.device}` : 'Sin dispositivo libre'}</span>` : ''}</p>
       </div>
       <button class="quiet icon" data-close aria-label="Cerrar detalle (Esc)">✕</button>
     </header>

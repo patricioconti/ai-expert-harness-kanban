@@ -35,6 +35,31 @@ test('features independientes avanzan en paralelo, cada una en su rama y worktre
   assert.equal(git(cwd, 'status', '--porcelain'), '');
 });
 
+test('cada feature en paralelo recibe su propio dispositivo Android o ninguno', async () => {
+  const seen = {};
+  // Both start in the same pump, so the second one finds the only device held.
+  const executor = fakeExecutor({ hook: ({ task, role, device, env }) => { seen[`${task.id}:${role.name}`] = [device, env?.ANDROID_SERIAL]; } });
+  const { queue } = setup([feature('first'), feature('second'), feature('third')], executor, { maxParallel: 2, devices: ['dev-a'] });
+  queue.enqueue(['first', 'second']);
+  await until(() => queue.data.runs.every((run) => run.status === 'review'));
+  assert.deepEqual(seen['first:implementer'], ['dev-a', 'dev-a']);
+  assert.deepEqual(seen['second:implementer'], [null, 'none']);
+  assert.equal(byTask(queue, 'second').device, null);
+  // A finished feature gives its device back.
+  queue.enqueue(['third']);
+  await until(() => byTask(queue, 'third')?.status === 'review');
+  assert.deepEqual(seen['third:validator'], ['dev-a', 'dev-a']);
+});
+
+test('sin dispositivos configurados no se toca ANDROID_SERIAL', async () => {
+  const seen = [];
+  const { queue } = setup([feature('first')], fakeExecutor({ hook: ({ device, env }) => { seen.push([device, env?.ANDROID_SERIAL]); } }));
+  queue.enqueue(['first']);
+  await until(() => byTask(queue, 'first').status === 'review');
+  assert.ok(seen.every(([device, serial]) => device === undefined && serial === undefined));
+  assert.equal(byTask(queue, 'first').device, undefined);
+});
+
 test('una dependiente espera al merge humano y parte de una base que ya lo contiene', async () => {
   const calls = [];
   const { queue, cwd } = setup([feature('second', ['first']), feature('first'), feature('unselected')], fakeExecutor({ calls }));

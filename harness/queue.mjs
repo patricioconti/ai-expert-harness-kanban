@@ -17,13 +17,14 @@ const cachedProject = fileMemo(inspectProject, (_, project) => [join(project.pat
 const cachedRuntime = fileMemo(loadRuntime, (path, runtime) => runtime.sources.map((source) => join(path, source.path)));
 
 export class FeatureQueue {
-  constructor({ store, executor, piOptions = {}, piVersion, credentials = null, maxParallel = 3, worktreeRoot, detect = detectReview, reviewOptions = {} }) {
+  constructor({ store, executor, piOptions = {}, piVersion, credentials = null, maxParallel = 3, devices = [], worktreeRoot, detect = detectReview, reviewOptions = {} }) {
     this.store = store;
     this.executor = executor;
     this.piOptions = piOptions;
     this.piVersion = piVersion;
     this.credentials = credentials;
     this.maxParallel = maxParallel;
+    this.devices = devices;
     // Absolute on purpose: git runs inside the project, the harness elsewhere; a relative root means two places.
     this.worktreeRoot = resolve(worktreeRoot ?? join(store.path, '..', 'worktrees'));
     this.detect = detect;
@@ -144,15 +145,25 @@ export class FeatureQueue {
     this.event(run, { message: `Worktree ${run.branch} desde ${run.baseRef.replace(/^refs\/(heads|remotes)\//, '')}` });
     return run.worktree;
   }
+  /** A free device from the pool, or null when every one is held by another running feature. */
+  lease() {
+    const held = new Set([...this.active.values()].map((entry) => entry.device));
+    return this.devices.find((serial) => !held.has(serial)) ?? null;
+  }
   async start(run) {
     const controller = new AbortController();
-    this.active.set(run.id, { run, controller });
+    const device = this.devices.length ? this.lease() : undefined;
+    this.active.set(run.id, { run, controller, device });
     run.status = 'running';
     run.error = null;
+    run.device = device;
     this.save();
     try {
       const cwd = this.prepare(run);
-      const piOptions = { ...this.piOptions, ...(this.credentials ? { env: this.credentials.env() } : {}) };
+      const env = this.credentials?.env() ?? this.piOptions.env;
+      // adb and the Android Gradle plugin honour ANDROID_SERIAL; an unknown serial makes them fail instead of sharing a device.
+      const deviceEnv = device === undefined ? {} : { env: { ...(env ?? process.env), ANDROID_SERIAL: device ?? 'none' }, device };
+      const piOptions = { ...this.piOptions, ...(env ? { env } : {}), ...deviceEnv };
       await executeFeature({ run, cwd, signal: controller.signal, save: this.save, emit: (event) => this.event(run, event), executor: this.executor, piOptions });
       if (!run.published) {
         run.pr = this.review().publish(run, { feedback: run.humanFeedback }) ?? null;

@@ -55,7 +55,8 @@ export function createHarnessServer({ statePath = process.env.HARNESS_STATE_PATH
   const credentials = engine.id === 'pi' ? new Credentials({ path: join(dirname(statePath), 'credentials.json'), env }) : null;
   const login = engine.id === 'claude' ? new ClaudeLogin({ claudeBin: options.claudeBin, env, read: readAuth }) : null;
   const maxParallel = Math.max(1, Math.min(8, Number(env.HARNESS_PARALLEL ?? 3) || 3));
-  try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials: credentials ?? login, maxParallel, ...queueOptions }); }
+  const devices = [...new Set((env.HARNESS_ANDROID_DEVICES ?? '').split(',').map((serial) => serial.trim()).filter(Boolean))];
+  try { queue = new FeatureQueue({ store: new StateStore(statePath), executor, piVersion, piOptions: options, credentials: credentials ?? login, maxParallel, devices, ...queueOptions }); }
   catch (error) { release(); throw error; }
   // A launcher can open the board on a project directly; the native folder picker needs a person.
   if (env.HARNESS_PROJECT) {
@@ -131,7 +132,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const { server, queue } = createHarnessServer();
   queue.watchReviews();
   const port = Number(process.env.PORT ?? 4173);
-  server.listen(port, '127.0.0.1', () => console.log(`Harness en http://localhost:${port} · ${queue.piOptions.engineName} · feature-flow · hasta ${queue.maxParallel} en paralelo`));
+  server.listen(port, '127.0.0.1', () => console.log(`Harness en http://localhost:${port} · ${queue.piOptions.engineName} · feature-flow · hasta ${queue.maxParallel} en paralelo${queue.devices.length ? ` · dispositivos ${queue.devices.join(', ')}` : ''}`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     await queue.close();
     server.close();
