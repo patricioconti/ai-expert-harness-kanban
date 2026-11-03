@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { inspectProject } from './project-contract.mjs';
 import { loadRuntime, roleStages, digest } from './project-runtime.mjs';
 import { runPiRole, validateRoleResult } from './pi-role.mjs';
+import { reapLeftovers } from './reap.mjs';
 import { pinnedPi } from './pi-config.mjs';
 import { assertWorkspace, featureChanges, fileHash, git, sameSnapshot, scopedCommit, snapshot, startWorkspace } from './git-workspace.mjs';
 import { jsonLike } from './json-text.mjs';
@@ -75,7 +76,7 @@ async function finalize({ run, cwd, save, emit }) {
   emit({ message: `Aceptación independiente y commit ${run.commit.slice(0, 8)} en ${run.branch ?? 'la rama de la feature'}.` });
 }
 
-export async function executeFeature({ run, cwd, signal, save, emit, executor = runPiRole, piOptions = {}, maxRepairs = 3 }) {
+export async function executeFeature({ run, cwd, signal, save, emit, executor = runPiRole, piOptions = {}, maxRepairs = 3, reap = reapLeftovers }) {
   const runtime = loadRuntime(cwd);
   if (run.runtimeHash && run.runtimeHash !== runtime.fingerprint) throw new Error('Han cambiado las skills o los subagentes durante la ejecución. Revisa la ejecución antes de descartarla y empezar otra');
   if (!run.baseline) {
@@ -122,7 +123,14 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     const before = run.roleBaseline?.role === roleName ? run.roleBaseline.files : snapshot(cwd);
     run.roleBaseline = { role: roleName, files: before };
     save();
-    let result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, files: featureChanges(cwd, run.baseline), ...piOptions });
+    const roleStarted = Date.now();
+    let result;
+    try { result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, files: featureChanges(cwd, run.baseline), ...piOptions }); }
+    finally {
+      // Before the snapshot: a leftover process could still be writing into the worktree.
+      const reaped = await reap(cwd, roleStarted);
+      if (reaped.length) emit({ level: 'warn', message: `${roleName} dejó ${reaped.length === 1 ? 'un proceso' : `${reaped.length} procesos`} en marcha en el worktree; el host ${reaped.length === 1 ? 'lo cerró' : 'los cerró'}: ${reaped.map((item) => item.command).join(', ')}` });
+    }
     // Validate the same contract even for injected test adapters.
     result = { ...validateRoleResult(result, roleName), output: result.output ?? '' };
     run.steps.push({ role: roleName, skill: role.skillName, provider: run.provider, model: run.model, at: new Date().toISOString(), ...result });
