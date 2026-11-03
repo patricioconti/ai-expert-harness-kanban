@@ -2,6 +2,13 @@
 
 Capa visual del `feature-flow` de AI Expert. Abre un proyecto, selecciona las features que faltan y sigue el trabajo real de planner → implementer → validator. Sin demo mezclada con ejecuciones reales.
 
+> **Fork de [devexpert-io/ai-expert-harness-kanban](https://github.com/devexpert-io/ai-expert-harness-kanban).** El original sigue intacto: con Pi y DevExpert Inference, todo funciona igual que allí. Este fork añade:
+>
+> - Un segundo motor, `HARNESS_ENGINE=claude`, que ejecuta los roles con tu suscripción de Claude Code (login de claude.ai, nunca una API key). Ver [Con tu suscripción de Claude Code](#con-tu-suscripción-de-claude-code).
+> - Su Claude Code de ensayo (`pnpm dev:ensayo:claude`).
+> - `HARNESS_PROJECT`, para abrir el tablero con un proyecto ya seleccionado.
+> - Dos reglas nuevas del host, que valen para los dos motores: se cierran los procesos que deja un rol en su worktree, y si el implementer toca la spec, **Continuar** vuelve al planner.
+
 ## Arranque
 
 Node 22 o superior, Git y un motor para los roles: Pi (por defecto) o Claude Code con tu suscripción (`HARNESS_ENGINE=claude`, ver más abajo). No necesita dependencias npm. Para revisar en GitHub, además `gh` autenticado.
