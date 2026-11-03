@@ -142,7 +142,15 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     const touched = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((path) => before[path] !== after[path]);
     if (roleName === 'validator' && !sameSnapshot(before, after)) throw new Error('Validator modificó archivos: se requiere revisión, no se aceptará la feature');
     if (roleName === 'planner' && touched.some((path) => path !== spec)) throw new Error('Planner cambió archivos fuera de la especificación');
-    if (roleName === 'implementer' && touched.includes(spec)) throw new Error('Implementer cambió la especificación aceptada; requiere nueva planificación');
+    if (roleName === 'implementer' && touched.includes(spec)) {
+      // The work stays owned so a later commit can include it; only the planner may settle the spec it changed.
+      run.ownedFiles = [...new Set([...run.ownedFiles, ...touched])];
+      run.nextRole = 'planner';
+      delete run.specHash;
+      delete run.roleBaseline;
+      save();
+      throw new Error('Implementer cambió la especificación aceptada; continúa para que el planner la revise de nuevo');
+    }
     if (touched.some((path) => !result.files.includes(path))) throw new Error('El resultado del subagente no declara todos los archivos que modificó');
     run.ownedFiles = [...new Set([...run.ownedFiles, ...touched])];
     if (result.outcome === 'block' || result.verdict === 'block') throw new Error(result.summary);

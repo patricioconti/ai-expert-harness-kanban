@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { FeatureQueue } from '../harness/queue.mjs';
@@ -191,4 +191,24 @@ test('un límite de suscripción agotado pausa la cola y no arranca las siguient
   assert.deepEqual(calls, ['first']);
   assert.equal(byTask(queue, 'second').status, 'queued');
   assert.match(byTask(queue, 'first').error, /límite de tu suscripción/);
+});
+
+test('si el implementer toca la spec, continuar vuelve al planner y el commit conserva su trabajo', async () => {
+  const calls = [];
+  let ticked = false;
+  const executor = fakeExecutor({ calls, hook: ({ role, cwd, task }) => {
+    if (role.name === 'implementer' && !ticked) { ticked = true; writeFileSync(join(cwd, `docs/specs/${task.id}.md`), '# search\n- [x] Done\n'); }
+  } });
+  const { queue } = setup([feature('search')], executor);
+  queue.enqueue(['search']);
+  await until(() => byTask(queue, 'search').status === 'blocked');
+  const run = byTask(queue, 'search');
+  assert.match(run.error, /continúa para que el planner la revise/);
+  assert.equal(run.nextRole, 'planner');
+  queue.action(run.id, 'retry');
+  await until(() => byTask(queue, 'search').status === 'review');
+  assert.deepEqual(calls, ['search:planner', 'search:implementer', 'search:planner', 'search:validator']);
+  const committed = git(run.worktree, 'show', '--name-only', '--format=', 'HEAD').split('\n');
+  assert.ok(committed.includes('src/search.js'));
+  assert.ok(committed.includes('docs/specs/search.md'));
 });

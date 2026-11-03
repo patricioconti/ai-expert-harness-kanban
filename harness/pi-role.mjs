@@ -33,6 +33,7 @@ export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline
     role.name === 'planner' && humanFeedback ? 'The human feedback may change the expected behaviour: update the specification and its acceptance scenarios so they reflect it. The implementer will work against your updated spec and may not edit it.' : '',
     role.name === 'implementer' && humanFeedback ? 'The planner has already updated the specification for this feedback. Implement against it; do not edit the specification.' : '',
     role.name === 'implementer' ? 'Update only the selected feature to passing after actual verification, with evidence; update PROGRESS.md. Never set accepted.' : '',
+    role.name === 'implementer' ? `Do not edit docs/specs/${task.id}.md, not even to tick checkboxes or record evidence: report findings and evidence in your handoff and PROGRESS.md. If the specification is wrong, return block and explain why; only the planner may change it.` : '',
     role.name === 'validator' ? 'Inspect independently and rerun checks. Do not modify any tracked or untracked file; return validation in the response. A failed or unrun required gate cannot be accept.' : '',
     handoff
   ].filter(Boolean).join('\n\n');
