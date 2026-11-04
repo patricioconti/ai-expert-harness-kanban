@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { inspectProject } from './project-contract.mjs';
@@ -10,6 +11,8 @@ import { assertWorkspace, featureChanges, fileHash, git, sameSnapshot, scopedCom
 import { conflictMarkers, startMerge } from './branch-sync.mjs';
 import { jsonLike } from './json-text.mjs';
 
+// Short on purpose: macOS caps Unix socket paths near 104 bytes, and tools put sockets in TMPDIR.
+const defaultScratchRoot = process.platform === 'win32' ? join(tmpdir(), 'harness') : '/tmp/harness';
 const temporaryPath = (path) => `${path}.harness-tmp`;
 function atomicText(path, text) {
   writeFileSync(temporaryPath(path), text);
@@ -97,7 +100,7 @@ function beginMerge({ run, cwd, save, emit }) {
   emit({ message: `Merge de ${run.resolve.name} preparado; conflictos para el implementer en ${run.resolve.conflicts.join(', ') || 'ningún archivo'}` });
 }
 
-export async function executeFeature({ run, cwd, signal, save, emit, executor = runPiRole, piOptions = {}, maxRepairs = 3, reap = reapLeftovers }) {
+export async function executeFeature({ run, cwd, signal, save, emit, executor = runPiRole, piOptions = {}, maxRepairs = 3, reap = reapLeftovers, scratchRoot = defaultScratchRoot }) {
   if (run.resolve) beginMerge({ run, cwd, save, emit });
   // Read after the merge: the base may bring new skills or role instructions.
   const runtime = loadRuntime(cwd);
@@ -147,12 +150,18 @@ export async function executeFeature({ run, cwd, signal, save, emit, executor = 
     run.roleBaseline = { role: roleName, files: before };
     save();
     const roleStarted = Date.now();
+    // Each role of each run gets its own temporary directory, so parallel features never share /tmp names.
+    const scratch = join(scratchRoot, `${run.id.slice(0, 8)}-${roleName}`);
+    rmSync(scratch, { recursive: true, force: true });
+    mkdirSync(scratch, { recursive: true });
+    const env = { ...(piOptions.env ?? process.env), TMPDIR: scratch, TMP: scratch, TEMP: scratch };
     let result;
-    try { result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, merge: run.resolve, files: featureChanges(cwd, run.baseline), ...piOptions }); }
+    try { result = await executor({ task, role, runtime, cwd, signal, emit, baseline: run.baseline, repairBrief: run.repairBrief, humanFeedback: run.humanFeedback, merge: run.resolve, files: featureChanges(cwd, run.baseline), ...piOptions, env, scratch }); }
     finally {
       // Before the snapshot: a leftover process could still be writing into the worktree.
       const reaped = await reap(cwd, roleStarted);
       if (reaped.length) emit({ level: 'warn', message: `${roleName} dejó ${reaped.length === 1 ? 'un proceso' : `${reaped.length} procesos`} en marcha en el worktree; el host ${reaped.length === 1 ? 'lo cerró' : 'los cerró'}: ${reaped.map((item) => item.command).join(', ')}` });
+      rmSync(scratch, { recursive: true, force: true });
     }
     // Validate the same contract even for injected test adapters.
     result = { ...validateRoleResult(result, roleName), output: result.output ?? '' };

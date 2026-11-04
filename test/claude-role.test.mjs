@@ -51,6 +51,17 @@ test('cada rol usa su modelo fijado, la sesión y herramientas acotadas', async 
   assert.doesNotMatch(seen.messages[0], /<harness-result>/);
 });
 
+test('el directorio temporal del rol se le abre a Claude Code y se nombra en el prompt', async () => {
+  const seen = {};
+  await runClaudeRole({ task, role: role('implementer'), runtime, cwd: '/tmp', env: { TMPDIR: '/tmp/harness/abc-implementer' }, scratch: '/tmp/harness/abc-implementer', spawnImpl: fakeSpawn([[init, done({ structured_output: passing })]], seen) });
+  assert.equal(flag(seen.args, '--add-dir'), '/tmp/harness/abc-implementer');
+  assert.equal(seen.options.env.TMPDIR, '/tmp/harness/abc-implementer');
+  assert.match(seen.messages[0], /Scratch directory for this role: \/tmp\/harness\/abc-implementer[^]*never directly in \/tmp/);
+  const without = {};
+  await runClaudeRole({ task, role: role('implementer'), runtime, cwd: '/tmp', env: {}, spawnImpl: fakeSpawn([[init, done({ structured_output: passing })]], without) });
+  assert.ok(!without.args.includes('--add-dir'));
+});
+
 test('planner usa sonnet y el validator no puede editar archivos', async () => {
   const planner = {}; const validator = {};
   await runClaudeRole({ task, role: role('planner'), runtime, cwd: '/tmp', env: {}, spawnImpl: fakeSpawn([[init, done({ structured_output: { ...passing, outcome: 'ready' } })]], planner) });

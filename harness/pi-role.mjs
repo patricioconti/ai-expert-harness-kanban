@@ -14,7 +14,7 @@ export function resultSchema(roleName) {
     : `{"outcome":"${roleName === 'planner' ? 'ready' : 'passing'}|block","summary":"...","evidence":["actual result"],"files":["every path changed by you"],"testing":"concrete local testing steps"}`;
 }
 
-export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [], merge, device, handoff }) {
+export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files = [], merge, device, scratch, handoff }) {
   const base = merge?.name ? `the base branch ${merge.name}` : 'the base';
   const schema = resultSchema(role.name);
   handoff ??= `End your final response with exactly one <harness-result>${schema}</harness-result> JSON object, replacing placeholders with actual results. Include all changed/reviewed file paths. If unable to proceed, return block and explain why. This structured handoff does not replace the project skill.`;
@@ -32,6 +32,7 @@ export function buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline
     merge && role.name === 'validator' ? 'Review the conflict resolution: the conflicted files, the implementer changes, and that both sides of each conflict still behave as their specs say. Rerun the verification. Files that merged cleanly and nobody touched afterwards were reviewed on the base; you need not list them.' : '',
     device ? `Android device for this feature: ${device} (already set as ANDROID_SERIAL). Other features run in parallel on other devices: never pass another serial to adb, never start, stop, or wipe emulators.` : '',
     device === null ? 'No Android device is free for this feature: other features are using them in parallel (ANDROID_SERIAL is set to an unknown serial on purpose). Do not run adb, installs, instrumented tests, or Maestro, and do not start an emulator; verify with the checks that need no device and say so in your evidence.' : '',
+    scratch ? `Scratch directory for this role: ${scratch} (also $TMPDIR). Put temporary scripts, logs, dumps and screenshots there, never directly in /tmp: other features run in parallel and would overwrite them. The host deletes it when the role ends.` : '',
     'Read AGENTS.md and PROGRESS.md in the repository root. Resolve repository artifacts from cwd and skill references relative to their SKILL.md.',
     'Work on this feature only. Do not create further subagents. The host orchestrates the three independent roles.',
     'No hagas merge, push, deploy, cambios de credenciales ni operaciones de producción. Do not commit, stage, switch branches, or alter Git configuration/hooks. The host owns acceptance and the scoped commit.',
@@ -110,7 +111,7 @@ export function mapPiEvent(event, role) {
   return null;
 }
 
-export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, merge, device, piBin = 'pi', provider = pinnedPi.provider, model = pinnedPi.model, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
+export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, merge, device, scratch, piBin = 'pi', provider = pinnedPi.provider, model = pinnedPi.model, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
   if (signal?.aborted) throw new Error('Ejecución cancelada');
   emit({ stage: roleStages[role.name], role: role.name, skill: role.skillName, message: `Pi · ${provider}/${model ?? role.model} · ${role.thinking}` });
   const system = [runtime.instructions.text, runtime.flow.text, role.developerInstructions, `Skill source: ${role.skill.path}\n${role.skill.text}`].join('\n\n');
@@ -188,6 +189,6 @@ export async function runPiRole({ task, role, runtime, cwd, emit = () => {}, sig
       }
     });
     child.on('close', (code) => { if (!finished) finish(new Error(stderr.trim() || `Pi terminó sin resultado (código ${code})`)); });
-    child.stdin.write(`${JSON.stringify({ id: `${task.id}-${role.name}`, type: 'prompt', message: buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files, merge, device }) })}\n`);
+    child.stdin.write(`${JSON.stringify({ id: `${task.id}-${role.name}`, type: 'prompt', message: buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files, merge, device, scratch }) })}\n`);
   });
 }

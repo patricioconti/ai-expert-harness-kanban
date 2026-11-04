@@ -66,6 +66,22 @@ test('adb devices: solo cuentan los listos, y sin adb no se descarta ninguno', (
   assert.equal(connectedDevices({ spawnSyncImpl: () => ({ status: null, error: new Error('ENOENT') }) }), null);
 });
 
+test('cada rol de cada feature tiene su propio TMPDIR, que el host borra al terminar', async () => {
+  const seen = [];
+  const executor = fakeExecutor({ hook: ({ task, role, scratch, env }) => { seen.push({ key: `${task.id}:${role.name}`, scratch, tmp: env.TMPDIR, existed: existsSync(scratch) }); } });
+  const { queue } = setup([feature('first'), feature('second')], executor, { maxParallel: 2 });
+  queue.enqueue(['first', 'second']);
+  await until(() => queue.data.runs.every((run) => run.status === 'review'));
+  assert.equal(seen.length, 6);
+  assert.equal(new Set(seen.map((item) => item.scratch)).size, 6);
+  for (const item of seen) {
+    assert.equal(item.tmp, item.scratch);
+    assert.ok(item.existed);
+    assert.ok(!existsSync(item.scratch));
+    assert.ok(item.scratch.length < 40);
+  }
+});
+
 test('sin dispositivos configurados no se toca ANDROID_SERIAL', async () => {
   const seen = [];
   const { queue } = setup([feature('first')], fakeExecutor({ hook: ({ device, env }) => { seen.push([device, env?.ANDROID_SERIAL]); } }));

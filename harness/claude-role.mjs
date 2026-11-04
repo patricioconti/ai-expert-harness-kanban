@@ -25,9 +25,10 @@ export function claudeSchema(roleName) {
   return { type: 'object', properties: { outcome: { type: 'string', enum: [roleName === 'planner' ? 'ready' : 'passing', 'block'] }, ...common }, required: ['outcome', 'summary', 'evidence', 'files', 'testing'] };
 }
 
-export function claudeArgs({ role, system, model, effort }) {
+export function claudeArgs({ role, system, model, effort, scratch }) {
   const { tools, allowed } = roleTools[role.name];
   return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence',
+    ...(scratch ? ['--add-dir', scratch] : []),
     '--model', model, '--effort', effort, '--permission-mode', 'dontAsk', '--tools', tools.join(','),
     '--allowedTools', ...allowed, '--disallowedTools', ...hostGit,
     '--strict-mcp-config', '--setting-sources', 'project', '--disable-slash-commands',
@@ -69,7 +70,7 @@ function limitError(limit) {
   return error;
 }
 
-export async function runClaudeRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, merge, device, claudeBin = 'claude', models = pinnedClaude.models, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
+export async function runClaudeRole({ task, role, runtime, cwd, emit = () => {}, signal, repairBrief, humanFeedback, baseline, files, merge, device, scratch, claudeBin = 'claude', models = pinnedClaude.models, timeoutMs = 1_800_000, env = process.env, spawnImpl = spawn }) {
   if (signal?.aborted) throw new Error('Ejecución cancelada');
   if (role.permissions) throw new Error('El motor Claude Code todavía no aplica los permisos de .opencode/agents; usa Pi para este proyecto');
   const model = models[role.name];
@@ -77,9 +78,9 @@ export async function runClaudeRole({ task, role, runtime, cwd, emit = () => {},
   emit({ stage: roleStages[role.name], role: role.name, skill: role.skillName, message: `Claude Code · ${model} · ${effort}` });
   // Claude Code loads the project's AGENTS.md from cwd itself, so only the flow, the role and its skill are appended.
   const system = [runtime.flow.text, role.developerInstructions, `Skill source: ${role.skill.path}\n${role.skill.text}`].join('\n\n');
-  const prompt = buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files, merge, device, handoff });
+  const prompt = buildPiPrompt({ task, role, repairBrief, humanFeedback, baseline, files, merge, device, scratch, handoff });
   return new Promise((resolve, reject) => {
-    const child = spawnImpl(process.execPath, [supervisor, claudeBin, ...claudeArgs({ role, system, model, effort })], { cwd, env: claudeEnv(env), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    const child = spawnImpl(process.execPath, [supervisor, claudeBin, ...claudeArgs({ role, system, model, effort, scratch })], { cwd, env: claudeEnv(env), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let finished = false;
     let stderr = '';
     let report = '';
