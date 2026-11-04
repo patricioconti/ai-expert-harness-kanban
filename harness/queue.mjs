@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { inspectProject } from './project-contract.mjs';
 import { digest, loadRuntime, runtimeSummary } from './project-runtime.mjs';
+import { connectedDevices } from './android-devices.mjs';
 import { executeFeature } from './feature-flow.mjs';
 import { fileMemo } from './file-memo.mjs';
 import { createReview, detectReview } from './review.mjs';
@@ -17,7 +18,7 @@ const cachedProject = fileMemo(inspectProject, (_, project) => [join(project.pat
 const cachedRuntime = fileMemo(loadRuntime, (path, runtime) => runtime.sources.map((source) => join(path, source.path)));
 
 export class FeatureQueue {
-  constructor({ store, executor, piOptions = {}, piVersion, credentials = null, maxParallel = 3, devices = [], worktreeRoot, detect = detectReview, reviewOptions = {} }) {
+  constructor({ store, executor, piOptions = {}, piVersion, credentials = null, maxParallel = 3, devices = [], connected = connectedDevices, worktreeRoot, detect = detectReview, reviewOptions = {} }) {
     this.store = store;
     this.executor = executor;
     this.piOptions = piOptions;
@@ -25,6 +26,7 @@ export class FeatureQueue {
     this.credentials = credentials;
     this.maxParallel = maxParallel;
     this.devices = devices;
+    this.connected = connected;
     // Absolute on purpose: git runs inside the project, the harness elsewhere; a relative root means two places.
     this.worktreeRoot = resolve(worktreeRoot ?? join(store.path, '..', 'worktrees'));
     this.detect = detect;
@@ -145,10 +147,11 @@ export class FeatureQueue {
     this.event(run, { message: `Worktree ${run.branch} desde ${run.baseRef.replace(/^refs\/(heads|remotes)\//, '')}` });
     return run.worktree;
   }
-  /** A free device from the pool, or null when every one is held by another running feature. */
+  /** A connected device no other running feature holds, or null. A phone can drop off adb after the board starts. */
   lease() {
     const held = new Set([...this.active.values()].map((entry) => entry.device));
-    return this.devices.find((serial) => !held.has(serial)) ?? null;
+    const online = this.connected();
+    return this.devices.find((serial) => !held.has(serial) && (!online || online.has(serial))) ?? null;
   }
   async start(run) {
     const controller = new AbortController();

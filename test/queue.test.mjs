@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { FeatureQueue } from '../harness/queue.mjs';
+import { connectedDevices } from '../harness/android-devices.mjs';
 import { StateStore } from '../harness/state-store.mjs';
 import { inspectProject } from '../harness/project-contract.mjs';
 import { git } from '../harness/git-workspace.mjs';
@@ -39,7 +40,7 @@ test('cada feature en paralelo recibe su propio dispositivo Android o ninguno', 
   const seen = {};
   // Both start in the same pump, so the second one finds the only device held.
   const executor = fakeExecutor({ hook: ({ task, role, device, env }) => { seen[`${task.id}:${role.name}`] = [device, env?.ANDROID_SERIAL]; } });
-  const { queue } = setup([feature('first'), feature('second'), feature('third')], executor, { maxParallel: 2, devices: ['dev-a'] });
+  const { queue } = setup([feature('first'), feature('second'), feature('third')], executor, { maxParallel: 2, devices: ['dev-a'], connected: () => null });
   queue.enqueue(['first', 'second']);
   await until(() => queue.data.runs.every((run) => run.status === 'review'));
   assert.deepEqual(seen['first:implementer'], ['dev-a', 'dev-a']);
@@ -49,6 +50,20 @@ test('cada feature en paralelo recibe su propio dispositivo Android o ninguno', 
   queue.enqueue(['third']);
   await until(() => byTask(queue, 'third')?.status === 'review');
   assert.deepEqual(seen['third:validator'], ['dev-a', 'dev-a']);
+});
+
+test('un dispositivo configurado pero desconectado no se asigna', async () => {
+  const seen = [];
+  const { queue } = setup([feature('first')], fakeExecutor({ hook: ({ device }) => { seen.push(device); } }), { devices: ['phone', 'emulator'], connected: () => new Set(['emulator']) });
+  queue.enqueue(['first']);
+  await until(() => byTask(queue, 'first').status === 'review');
+  assert.ok(seen.every((device) => device === 'emulator'));
+});
+
+test('adb devices: solo cuentan los listos, y sin adb no se descarta ninguno', () => {
+  const stdout = 'List of devices attached\nemulator-5554\tdevice\n99fix\tunauthorized\nR58\toffline\n\n';
+  assert.deepEqual([...connectedDevices({ spawnSyncImpl: () => ({ status: 0, stdout }) })], ['emulator-5554']);
+  assert.equal(connectedDevices({ spawnSyncImpl: () => ({ status: null, error: new Error('ENOENT') }) }), null);
 });
 
 test('sin dispositivos configurados no se toca ANDROID_SERIAL', async () => {
